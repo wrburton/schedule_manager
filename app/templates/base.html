@@ -1,0 +1,543 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Calendar Checklist{% endblock %}</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* Theme CSS Custom Properties */
+        :root {
+            --bg-primary: #f3f4f6;
+            --bg-secondary: #ffffff;
+            --bg-card: #ffffff;
+            --text-primary: #1f2937;
+            --text-secondary: #4b5563;
+            --text-muted: #6b7280;
+            --border-color: #e5e7eb;
+            --accent-primary: #3b82f6;
+            --accent-secondary: #10b981;
+            --accent-warning: #f59e0b;
+            --accent-danger: #ef4444;
+            --shadow: 0 1px 3px 0 rgb(0 0 0 / 0.1);
+            --card-blur: none;
+            --card-opacity: 1;
+            --glow: none;
+            --nav-bg: #ffffff;
+            --checkbox-checked: #3b82f6;
+            --checkbox-border: #d1d5db;
+        }
+
+        /* Classic Theme (default light) */
+        .theme-classic {
+            --bg-primary: #f3f4f6;
+            --bg-secondary: #ffffff;
+            --bg-card: #ffffff;
+            --text-primary: #1f2937;
+            --text-secondary: #4b5563;
+            --text-muted: #6b7280;
+            --border-color: #e5e7eb;
+            --accent-primary: #3b82f6;
+            --accent-secondary: #10b981;
+            --shadow: 0 1px 3px 0 rgb(0 0 0 / 0.1);
+            --nav-bg: #ffffff;
+        }
+
+        /* Dark + Neon Theme */
+        .theme-dark-neon {
+            --bg-primary: #0a0a0f;
+            --bg-secondary: #12121a;
+            --bg-card: #1a1a2e;
+            --text-primary: #e0e0ff;
+            --text-secondary: #a0a0c0;
+            --text-muted: #6060a0;
+            --border-color: #2a2a4a;
+            --accent-primary: #00f0ff;
+            --accent-secondary: #00ff88;
+            --accent-warning: #ffcc00;
+            --accent-danger: #ff0066;
+            --shadow: 0 0 20px rgba(0, 240, 255, 0.15);
+            --nav-bg: #12121a;
+            --checkbox-checked: #00f0ff;
+            --checkbox-border: #4040a0;
+            --glow: 0 0 10px var(--accent-primary);
+        }
+
+        .theme-dark-neon .neon-border {
+            border: 1px solid var(--accent-primary);
+            box-shadow: 0 0 10px rgba(0, 240, 255, 0.3), inset 0 0 10px rgba(0, 240, 255, 0.1);
+        }
+
+        .theme-dark-neon .neon-text {
+            text-shadow: 0 0 10px var(--accent-primary);
+        }
+
+        /* Glassmorphism Theme */
+        .theme-glassmorphism {
+            --bg-primary: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+            --bg-secondary: rgba(255, 255, 255, 0.05);
+            --bg-card: rgba(255, 255, 255, 0.1);
+            --text-primary: #ffffff;
+            --text-secondary: rgba(255, 255, 255, 0.8);
+            --text-muted: rgba(255, 255, 255, 0.5);
+            --border-color: rgba(255, 255, 255, 0.2);
+            --accent-primary: #7c3aed;
+            --accent-secondary: #06b6d4;
+            --accent-warning: #fbbf24;
+            --accent-danger: #f43f5e;
+            --shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+            --card-blur: blur(10px);
+            --card-opacity: 0.9;
+            --nav-bg: rgba(255, 255, 255, 0.1);
+            --checkbox-checked: #7c3aed;
+            --checkbox-border: rgba(255, 255, 255, 0.3);
+        }
+
+        .theme-glassmorphism body {
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+            background-attachment: fixed;
+        }
+
+        .theme-glassmorphism .glass-card {
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+
+        /* Dark Minimal Theme */
+        .theme-dark-minimal {
+            --bg-primary: #121212;
+            --bg-secondary: #1e1e1e;
+            --bg-card: #252525;
+            --text-primary: #e0e0e0;
+            --text-secondary: #a0a0a0;
+            --text-muted: #707070;
+            --border-color: #333333;
+            --accent-primary: #bb86fc;
+            --accent-secondary: #03dac6;
+            --accent-warning: #ffb74d;
+            --accent-danger: #cf6679;
+            --shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+            --nav-bg: #1e1e1e;
+            --checkbox-checked: #bb86fc;
+            --checkbox-border: #505050;
+        }
+
+        /* Sci-fi Glow Theme */
+        .theme-sci-fi-glow {
+            --bg-primary: #050510;
+            --bg-secondary: #0a0a1a;
+            --bg-card: #0f0f2a;
+            --text-primary: #00ff9d;
+            --text-secondary: #00cc7d;
+            --text-muted: #008855;
+            --border-color: #00ff9d33;
+            --accent-primary: #00ff9d;
+            --accent-secondary: #00ccff;
+            --accent-warning: #ffcc00;
+            --accent-danger: #ff3366;
+            --shadow: 0 0 30px rgba(0, 255, 157, 0.2);
+            --nav-bg: #0a0a1a;
+            --checkbox-checked: #00ff9d;
+            --checkbox-border: #00ff9d55;
+            --glow: 0 0 15px var(--accent-primary);
+        }
+
+        .theme-sci-fi-glow .pulse-glow {
+            animation: pulse-glow 2s ease-in-out infinite;
+        }
+
+        @keyframes pulse-glow {
+            0%, 100% { box-shadow: 0 0 5px var(--accent-primary), 0 0 10px var(--accent-primary); }
+            50% { box-shadow: 0 0 10px var(--accent-primary), 0 0 20px var(--accent-primary), 0 0 30px var(--accent-primary); }
+        }
+
+
+        /* Apply theme variables to elements */
+        body {
+            margin: 0;
+            min-height: 100vh;
+        }
+
+        #theme-wrapper {
+            min-height: 100vh;
+            background-color: var(--bg-primary);
+            color: var(--text-primary);
+            transition: background-color 0.3s ease, color 0.3s ease;
+        }
+
+        .theme-glassmorphism#theme-wrapper {
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+            background-attachment: fixed;
+        }
+
+        .themed-nav {
+            background-color: var(--nav-bg);
+            border-bottom: 1px solid var(--border-color);
+            transition: background-color 0.3s ease;
+        }
+
+        .themed-card {
+            background-color: var(--bg-card);
+            border: 1px solid var(--border-color);
+            box-shadow: var(--shadow);
+            transition: all 0.3s ease;
+        }
+
+        .theme-glassmorphism .themed-card {
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+        }
+
+        .themed-text {
+            color: var(--text-primary);
+        }
+
+        .themed-text-secondary {
+            color: var(--text-secondary);
+        }
+
+        .themed-text-muted {
+            color: var(--text-muted);
+        }
+
+        .themed-border {
+            border-color: var(--border-color);
+        }
+
+        .themed-accent {
+            color: var(--accent-primary);
+        }
+
+        .themed-accent-bg {
+            background-color: var(--accent-primary);
+        }
+
+        .themed-success {
+            color: var(--accent-secondary);
+        }
+
+        .themed-success-bg {
+            background-color: var(--accent-secondary);
+        }
+
+        .themed-warning {
+            color: var(--accent-warning);
+        }
+
+        .themed-danger {
+            color: var(--accent-danger);
+        }
+
+        /* Touch-friendly buttons - prevents double-tap delay */
+        button, [data-toggle-item] {
+            touch-action: manipulation;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        /* Ensure toggle button captures taps even within group hover context */
+        [data-toggle-item] {
+            position: relative;
+            z-index: 1;
+        }
+
+        /* Only show delete buttons on hover for devices that support it */
+        @media (hover: none) {
+            /* On touch: always show delete buttons (no hover needed) */
+            .group .group-hover\:opacity-100 {
+                opacity: 1 !important;
+            }
+        }
+
+        /* Themed checkbox */
+        .themed-checkbox {
+            border-color: var(--checkbox-border);
+            transition: all 0.2s ease;
+        }
+
+        .themed-checkbox.checked {
+            background-color: var(--checkbox-checked);
+            border-color: var(--checkbox-checked);
+        }
+
+        .theme-dark-neon .themed-checkbox.checked,
+        .theme-sci-fi-glow .themed-checkbox.checked {
+            box-shadow: var(--glow);
+        }
+
+        /* Themed buttons */
+        .themed-btn-primary {
+            background-color: var(--accent-primary);
+            color: var(--bg-primary);
+            transition: all 0.2s ease;
+        }
+
+        .themed-btn-primary:hover {
+            filter: brightness(1.1);
+        }
+
+        .theme-dark-neon .themed-btn-primary:hover,
+        .theme-sci-fi-glow .themed-btn-primary:hover {
+            box-shadow: var(--glow);
+        }
+
+        .themed-btn-success {
+            background-color: var(--accent-secondary);
+            color: var(--bg-primary);
+        }
+
+        .themed-btn-success:hover {
+            filter: brightness(1.1);
+        }
+
+        /* Themed input */
+        .themed-input {
+            background-color: var(--bg-secondary);
+            border-color: var(--border-color);
+            color: var(--text-primary);
+        }
+
+        .themed-input:focus {
+            border-color: var(--accent-primary);
+            outline: none;
+            box-shadow: 0 0 0 2px rgba(var(--accent-primary), 0.2);
+        }
+
+        .theme-dark-neon .themed-input:focus,
+        .theme-sci-fi-glow .themed-input:focus {
+            box-shadow: 0 0 10px var(--accent-primary);
+        }
+
+        /* Theme selector styling */
+        .theme-selector {
+            background-color: var(--bg-secondary);
+            border-color: var(--border-color);
+            color: var(--text-primary);
+            padding: 0.25rem 0.5rem;
+            border-radius: 0.375rem;
+            font-size: 0.875rem;
+            cursor: pointer;
+        }
+
+        .theme-glassmorphism .theme-selector {
+            background-color: rgba(0, 0, 0, 0.5);
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+        }
+
+        .theme-glassmorphism .theme-selector option {
+            background-color: #1a1a2e;
+            color: #ffffff;
+        }
+
+        /* Status badges */
+        .themed-badge-success {
+            background-color: rgba(16, 185, 129, 0.2);
+            color: var(--accent-secondary);
+            border: 1px solid var(--accent-secondary);
+        }
+
+        .themed-badge-warning {
+            background-color: rgba(245, 158, 11, 0.2);
+            color: var(--accent-warning);
+            border: 1px solid var(--accent-warning);
+        }
+
+        /* Smooth transitions */
+        * {
+            transition-property: background-color, border-color, color, box-shadow;
+            transition-duration: 0.15s;
+            transition-timing-function: ease;
+        }
+    </style>
+</head>
+<body>
+    <div id="theme-wrapper" class="theme-dark-neon">
+        <div class="scanline">
+            <nav class="themed-nav shadow-sm relative">
+                <div class="max-w-4xl mx-auto px-4 py-3">
+                    <div class="flex justify-between items-center">
+                        <a href="/events/upcoming" class="text-xl font-semibold themed-text neon-text">
+                            Calendar Checklist
+                        </a>
+                        <div class="flex items-center space-x-2">
+                            <!-- Sync Now button -->
+                            <form action="/sync/now" method="post">
+                                <button type="submit" class="themed-accent hover:opacity-80 px-2 py-1">
+                                    Sync
+                                </button>
+                            </form>
+                            <!-- Menu button -->
+                            <button id="menu-btn" class="p-2 themed-text-secondary hover:themed-text" onclick="toggleMobileMenu()">
+                                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path id="menu-icon-open" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/>
+                                    <path id="menu-icon-close" class="hidden" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                                </svg>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                <!-- Menu dropdown -->
+                <div id="mobile-menu" class="hidden absolute top-full left-0 right-0 themed-nav border-t themed-border shadow-lg z-50">
+                    <div class="max-w-4xl mx-auto px-4 py-3 space-y-3">
+                        <a href="/events/upcoming" class="block py-2 themed-text-secondary hover:themed-text">Upcoming</a>
+                        <a href="/events/archive" class="block py-2 themed-text-secondary hover:themed-text">Archive</a>
+                        <div class="py-2">
+                            <label class="block text-sm themed-text-muted mb-1">Theme</label>
+                            <select id="theme-selector" class="theme-selector themed-border w-full" onchange="setTheme(this.value)">
+                                <option value="dark-neon">Dark + Neon</option>
+                                <option value="glassmorphism">Glassmorphism</option>
+                                <option value="dark-minimal">Dark Minimal</option>
+                                <option value="sci-fi-glow">Sci-fi Glow</option>
+                                <option value="classic">Classic</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+            </nav>
+
+            <main class="max-w-4xl mx-auto px-4 py-8">
+                {% block content %}{% endblock %}
+            </main>
+
+            <footer class="max-w-4xl mx-auto px-4 py-4 text-center themed-text-muted text-sm">
+                Calendar Checklist - Sync interval: {{ config.sync_interval_minutes if config else 5 }} minutes
+            </footer>
+        </div>
+    </div>
+
+    <script>
+    // Mobile menu toggle
+    function toggleMobileMenu() {
+        const menu = document.getElementById('mobile-menu');
+        const iconOpen = document.getElementById('menu-icon-open');
+        const iconClose = document.getElementById('menu-icon-close');
+
+        menu.classList.toggle('hidden');
+        iconOpen.classList.toggle('hidden');
+        iconClose.classList.toggle('hidden');
+    }
+
+    // Theme management
+    function setTheme(theme) {
+        const wrapper = document.getElementById('theme-wrapper');
+        wrapper.className = 'theme-' + theme;
+        document.cookie = `theme=${theme};path=/;max-age=31536000`; // 1 year
+
+        // Update selector
+        const selector = document.getElementById('theme-selector');
+        if (selector) selector.value = theme;
+    }
+
+    function getThemeFromCookie() {
+        const match = document.cookie.match(/theme=([^;]+)/);
+        return match ? match[1] : 'dark-neon'; // Default to dark-neon
+    }
+
+    // Apply saved theme on load
+    document.addEventListener('DOMContentLoaded', function() {
+        const savedTheme = getThemeFromCookie();
+        setTheme(savedTheme);
+
+        // Prevent toggle forms from submitting normally (we use AJAX)
+        document.addEventListener('submit', function(e) {
+            const form = e.target;
+            if (form.querySelector('[data-toggle-item]')) {
+                e.preventDefault();
+            }
+        });
+
+        // Handle checkbox toggle forms with AJAX
+        // Use pointerup for immediate response on touch devices
+        document.addEventListener('pointerup', function(e) {
+            const button = e.target.closest('[data-toggle-item]');
+            if (!button) return;
+
+            e.preventDefault();
+            e.stopPropagation();
+            const form = button.closest('form');
+            if (!form || button.disabled) return;
+
+            const url = form.action;
+            const itemContainer = button.closest('[data-item-id]');
+            const eventCard = button.closest('[data-event-id]');
+            if (!itemContainer) return;
+
+            // Get current state
+            const checkbox = itemContainer.querySelector('[data-checkbox]');
+            const itemText = itemContainer.querySelector('[data-item-text]');
+            const wasChecked = checkbox.classList.contains('checked');
+
+            // Optimistic update - toggle immediately
+            toggleCheckboxUI(checkbox, itemText, !wasChecked);
+
+            // Disable button during request
+            button.disabled = true;
+
+            fetch(url, {
+                method: 'POST',
+                headers: {
+                    'Accept': 'application/json',
+                },
+            })
+            .then(response => {
+                if (!response.ok) throw new Error('Toggle failed');
+                return response.json();
+            })
+            .then(data => {
+                // Update counter if present
+                if (eventCard) {
+                    const counter = eventCard.querySelector('[data-item-counter]');
+                    if (counter) {
+                        // Preserve suffix like "complete" if present
+                        const hasComplete = counter.textContent.includes('complete');
+                        counter.textContent = hasComplete
+                            ? `(${data.checked_count}/${data.total_count} complete)`
+                            : `(${data.checked_count}/${data.total_count})`;
+                    }
+                    const compactCounter = eventCard.querySelector('[data-compact-counter]');
+                    if (compactCounter) {
+                        compactCounter.textContent = `${data.checked_count}/${data.total_count} items`;
+                    }
+                    // Update confirm button state
+                    const confirmBtn = eventCard.querySelector('[data-confirm-btn]');
+                    if (confirmBtn) {
+                        if (data.all_checked) {
+                            confirmBtn.disabled = false;
+                            confirmBtn.removeAttribute('title');
+                        } else {
+                            confirmBtn.disabled = true;
+                            confirmBtn.setAttribute('title', 'Complete all items first');
+                        }
+                    }
+                }
+            })
+            .catch(error => {
+                // Rollback on error
+                toggleCheckboxUI(checkbox, itemText, wasChecked);
+                console.error('Toggle error:', error);
+            })
+            .finally(() => {
+                button.disabled = false;
+            });
+        });
+
+        function toggleCheckboxUI(checkbox, itemText, isChecked) {
+            if (isChecked) {
+                checkbox.classList.add('checked', 'themed-checkbox');
+                checkbox.innerHTML = '<svg class="w-3 h-3 text-white" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg>';
+                if (itemText) {
+                    itemText.classList.add('line-through', 'opacity-50');
+                }
+            } else {
+                checkbox.classList.remove('checked');
+                checkbox.innerHTML = '';
+                if (itemText) {
+                    itemText.classList.remove('line-through', 'opacity-50');
+                }
+            }
+        }
+    });
+    </script>
+</body>
+</html>

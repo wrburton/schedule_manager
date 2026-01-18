@@ -1,0 +1,46 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+.venv/
+env/
+.env
+*.egg-info/
+dist/
+build/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Database
+*.db
+*.db-shm
+*.db-wal
+
+# Google OAuth
+credentials.json
+token.json
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+cert.pem
+key.pem
+server.log
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Claude Code
+.claude/
+
+# Ruff
+.ruff_cache/

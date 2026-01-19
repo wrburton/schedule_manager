@@ -22,10 +22,10 @@ async def upcoming_events(request: Request, session: Session = Depends(get_sessi
     Display upcoming events with checklists.
 
     Shows events in two sections:
-    - Soon: Events from 2 hours ago to midnight ending the 2nd day (large cards with full checklists)
+    - Soon: Events ending within 2 hours ago to midnight ending the 2nd day (large cards with full checklists)
     - Later: Events from end of 2nd day to 2 weeks ahead (compact list view)
 
-    Events that have ended more than 2 hours ago are not shown.
+    Events that finished more than 2 hours ago are not shown.
     """
     has_auth = has_valid_credentials()
 
@@ -37,11 +37,11 @@ async def upcoming_events(request: Request, session: Session = Depends(get_sessi
     start_of_day_after = start_of_today + timedelta(days=2)
     in_2_weeks = now + timedelta(weeks=2)
 
-    # Today's events (from 2 hours ago to end of today)
+    # Today's events (finished within last 2 hours or not yet finished, starting today)
     today_statement = (
         select(Event)
         .where(Event.is_archived == False)  # noqa: E712
-        .where(Event.start_time >= two_hours_ago)
+        .where(Event.end_time >= two_hours_ago)
         .where(Event.start_time < start_of_tomorrow)
         .order_by(Event.start_time)
     )

@@ -64,7 +64,7 @@ def sync_calendar(session: Session) -> dict:
             )
         else:
             # Full sync - get events from 2 hours ago to 30 days ahead
-            # (matches the display window in events.py)
+            # Note: Google API timeMin filters by start time; display uses end_time + 2 hours
             time_min = (datetime.now(UTC) - timedelta(hours=2)).isoformat().replace("+00:00", "Z")
             time_max = (datetime.now(UTC) + timedelta(days=30)).isoformat().replace("+00:00", "Z")
 
@@ -329,13 +329,14 @@ def _cleanup_orphaned_events(session: Session, seen_google_ids: set) -> int:
         Number of events deleted
     """
     # Find non-archived events within the sync window that weren't returned by API
+    # Use end_time to match display logic (events shown until 2 hours after they finish)
     time_min = datetime.now(UTC) - timedelta(hours=2)
     time_max = datetime.now(UTC) + timedelta(days=30)
 
     statement = (
         select(Event)
         .where(Event.is_archived == False)
-        .where(Event.start_time >= time_min)
+        .where(Event.end_time >= time_min)
         .where(Event.start_time < time_max)
     )
     local_events = session.exec(statement).all()

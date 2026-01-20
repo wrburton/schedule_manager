@@ -14,9 +14,28 @@ logger = logging.getLogger(__name__)
 
 
 class SyncState:
-    """Track sync state (syncToken) per calendar."""
+    """In-memory storage for Google Calendar sync tokens and status.
+
+    Google Calendar API uses sync tokens for incremental synchronization.
+    After a full sync, the API returns a nextSyncToken. On subsequent
+    syncs, providing this token returns only events that changed since
+    the last sync, dramatically reducing API calls and data transfer.
+
+    This class stores tokens in memory (lost on restart). When a token
+    is missing or expired (HTTP 410), a full sync is performed and a
+    new token is obtained.
+
+    Attributes:
+        _tokens: Dictionary mapping calendar IDs to their sync tokens.
+        _last_sync_time: Timestamp of the last sync attempt.
+        _last_sync_success: Whether the last sync succeeded.
+        _last_sync_error: Error message from the last failed sync, if any.
+    """
 
     _tokens: dict[str, str] = {}
+    _last_sync_time: datetime | None = None
+    _last_sync_success: bool = True
+    _last_sync_error: str | None = None
 
     @classmethod
     def get_token(cls, calendar_id: str) -> str | None:
@@ -30,6 +49,29 @@ class SyncState:
     def clear_token(cls, calendar_id: str) -> None:
         cls._tokens.pop(calendar_id, None)
 
+    @classmethod
+    def record_sync_success(cls) -> None:
+        """Record a successful sync."""
+        cls._last_sync_time = datetime.now(UTC)
+        cls._last_sync_success = True
+        cls._last_sync_error = None
+
+    @classmethod
+    def record_sync_failure(cls, error: str) -> None:
+        """Record a failed sync with error message."""
+        cls._last_sync_time = datetime.now(UTC)
+        cls._last_sync_success = False
+        cls._last_sync_error = error
+
+    @classmethod
+    def get_sync_status(cls) -> dict:
+        """Get the current sync status."""
+        return {
+            "last_sync_time": cls._last_sync_time,
+            "success": cls._last_sync_success,
+            "error": cls._last_sync_error,
+        }
+
 
 def sync_calendar(session: Session) -> dict:
     """
@@ -39,11 +81,10 @@ def sync_calendar(session: Session) -> dict:
     """
     if not has_valid_credentials():
         logger.warning("No valid credentials, skipping sync")
+        SyncState.record_sync_failure("No valid credentials")
         return {"error": "No valid credentials", "created": 0, "updated": 0, "deleted": 0}
 
-    service = get_calendar_service()
     calendar_id = settings.google_calendar_id
-
     sync_token = SyncState.get_token(calendar_id)
 
     stats = {"created": 0, "updated": 0, "deleted": 0}
@@ -51,6 +92,7 @@ def sync_calendar(session: Session) -> dict:
     seen_google_ids = set()  # Track events returned by API during full sync
 
     try:
+        service = get_calendar_service()
         if sync_token:
             # Incremental sync
             events_result = (
@@ -96,7 +138,16 @@ def sync_calendar(session: Session) -> dict:
                 else:
                     stats["updated"] += 1
 
-        # Handle pagination
+        # Handle pagination for large result sets.
+        # Google Calendar API returns max ~250 events per page. When there are more,
+        # it includes a nextPageToken. We must fetch all pages to ensure we don't
+        # miss events during sync.
+        #
+        # Note: The event processing logic is duplicated here rather than extracted
+        # to a helper function because:
+        # 1. It keeps the sync flow linear and easy to follow
+        # 2. The processing is simple (just upsert/delete calls)
+        # 3. A helper would need many parameters (session, stats, is_full_sync, seen_google_ids)
         while "nextPageToken" in events_result:
             events_result = (
                 service.events()
@@ -133,6 +184,7 @@ def sync_calendar(session: Session) -> dict:
             SyncState.set_token(calendar_id, new_token)
 
         session.commit()
+        SyncState.record_sync_success()
 
     except HttpError as e:
         if e.resp.status == 410:
@@ -141,9 +193,11 @@ def sync_calendar(session: Session) -> dict:
             SyncState.clear_token(calendar_id)
             return sync_calendar(session)
         logger.error(f"Sync failed: {e}")
+        SyncState.record_sync_failure(str(e))
         raise
     except Exception as e:
         logger.error(f"Sync failed: {e}")
+        SyncState.record_sync_failure(str(e))
         raise
 
     logger.info(f"Sync completed: {stats}")
@@ -170,24 +224,43 @@ def _cleanup_orphaned_instance(
     """
     Clean up orphaned recurring event instances when a new exception is created.
 
-    When a recurring event instance is rescheduled in Google Calendar, a new
-    event ID is created. The old instance should be deleted, but full syncs
-    don't see cancelled events. This function detects and removes the orphaned
-    old instance by checking for events in the same series on the same day.
+    **The Problem:**
+    When a user reschedules a single instance of a recurring event in Google
+    Calendar (e.g., moves "Weekly Meeting" from Monday 10am to Monday 2pm),
+    Google creates a NEW event ID for the exception. The original instance
+    is marked as "cancelled" in Google's system.
+
+    During *incremental* sync, we see the cancellation and delete the old
+    instance. But during *full* sync (which happens on first run or when
+    the sync token expires), cancelled events are NOT returned by the API.
+    This leaves the old instance orphaned in our database.
+
+    **The Solution:**
+    When processing an event that belongs to a recurring series, look for
+    other instances of the SAME series on the SAME calendar day with a
+    DIFFERENT Google ID. If found, those are orphans that should be deleted.
+
+    **Why same-day matching works:**
+    - A recurring event can only have one instance per scheduled occurrence
+    - If we see two instances of "Weekly Team Sync" on the same Monday,
+      one of them must be an orphan from a rescheduled event
 
     Returns True if an orphan was deleted.
     """
-    # Find events in the same recurring series on the same calendar day
+    # Define the calendar day boundaries for the new event.
+    # We search within this day because recurring series typically have
+    # at most one instance per day (the original scheduled occurrence).
     day_start = new_start_time.replace(hour=0, minute=0, second=0, microsecond=0)
     day_end = day_start + timedelta(days=1)
 
+    # Query for potential orphans: same recurring series, same day, different ID
     statement = (
         select(Event)
-        .where(Event.recurring_event_id == recurring_event_id)
-        .where(Event.google_event_id != new_google_id)
-        .where(Event.start_time >= day_start)
-        .where(Event.start_time < day_end)
-        .where(Event.is_archived == False)
+        .where(Event.recurring_event_id == recurring_event_id)  # Same series
+        .where(Event.google_event_id != new_google_id)  # Different instance
+        .where(Event.start_time >= day_start)  # On the same
+        .where(Event.start_time < day_end)  # calendar day
+        .where(Event.is_archived == False)  # Don't touch archived events
     )
     orphans = session.exec(statement).all()
 
@@ -196,7 +269,8 @@ def _cleanup_orphaned_instance(
             f"Removing orphaned recurring instance: {orphan.title} at {orphan.start_time} "
             f"(replaced by new instance at {new_start_time})"
         )
-        # Delete related records
+        # Must manually delete related records due to SQLite foreign key handling.
+        # SQLModel relationships don't auto-cascade deletes in all cases.
         for item in orphan.items:
             session.delete(item)
         for attendee in orphan.attendees:
@@ -209,21 +283,40 @@ def _cleanup_orphaned_instance(
 
 
 def _upsert_event(session: Session, google_event: dict) -> bool:
-    """Create or update event. Returns True if created."""
+    """Create or update an event from Google Calendar data.
+
+    This function implements the core sync conflict resolution rules:
+
+    **Source of Truth Rules:**
+    - Google Calendar is authoritative for event metadata (title, times, description)
+    - Local database is authoritative for checklist state (is_checked)
+    - Archived events are never modified
+
+    **Conflict Resolution:**
+    - Time change detected → Reset all checklist items to unchecked
+      (Rationale: A rescheduled event may require re-preparation)
+    - Description change → Items re-parsed, new items added, missing items deleted
+      (Existing items preserve their checked state)
+
+    Returns:
+        True if a new event was created, False if existing event was updated.
+    """
     google_id = google_event["id"]
 
-    # Find existing
     statement = select(Event).where(Event.google_event_id == google_id)
     existing = session.exec(statement).first()
 
-    # Parse times
     start_time = _parse_datetime(google_event["start"])
     end_time = _parse_datetime(google_event["end"])
 
     if existing:
-        # Check if time changed (triggers checklist reset per design)
+        # === CONFLICT RESOLUTION: Time Change Detection ===
+        # Compare stored times with incoming times to detect rescheduling.
+        # This is a key business rule: if an event is moved to a different time,
+        # we assume the user needs to re-verify their preparation checklist.
         time_changed = existing.start_time != start_time or existing.end_time != end_time
 
+        # Update all Google-authoritative fields
         existing.title = google_event.get("summary", "Untitled")
         existing.description = google_event.get("description")
         existing.start_time = start_time
@@ -231,30 +324,32 @@ def _upsert_event(session: Session, google_event: dict) -> bool:
         existing.recurring_event_id = google_event.get("recurringEventId")
         existing.last_synced = datetime.now(UTC)
 
+        # === CONFLICT RESOLUTION: Checklist Reset on Time Change ===
+        # Only reset if the event hasn't been archived (archived = frozen state).
+        # This ensures users re-check items when meetings are rescheduled.
         if time_changed and not existing.is_archived:
-            # Reset checklist items per conflict rules
             logger.info(f"Event time changed, resetting checklist for {existing.title}")
             for item in existing.items:
                 item.is_checked = False
 
-        # Clean up orphaned instances from same recurring series on same day
-        # This catches existing orphans that weren't cleaned up before
+        # Handle orphaned recurring instances (see _cleanup_orphaned_instance docstring)
         recurring_event_id = google_event.get("recurringEventId")
         if recurring_event_id:
             _cleanup_orphaned_instance(session, recurring_event_id, start_time, google_id)
 
-        # Update items from description
+        # Sync items and attendees from the updated description
         _sync_items(session, existing, google_event.get("description"))
         _sync_attendees(session, existing, google_event.get("attendees", []))
 
         session.add(existing)
         return False
     else:
-        # Create new event
+        # === NEW EVENT CREATION ===
         recurring_event_id = google_event.get("recurringEventId")
 
-        # Check for orphaned instances from the same recurring series on the same day
-        # This handles the case where a recurring instance is rescheduled (new ID created)
+        # For recurring events: check if this new event ID replaces an existing
+        # instance on the same day (happens when Google creates a new ID for
+        # rescheduled recurring instances)
         if recurring_event_id:
             _cleanup_orphaned_instance(session, recurring_event_id, start_time, google_id)
 
@@ -276,7 +371,26 @@ def _upsert_event(session: Session, google_event: dict) -> bool:
 
 
 def _sync_items(session: Session, event: Event, description: str | None) -> None:
-    """Sync items from description."""
+    """Synchronize checklist items from an event's description.
+
+    Parses the event description for checklist items and reconciles them
+    with existing items in the database. This implements the sync conflict
+    resolution rules:
+
+    - New items in description: Added to database with source="parsed"
+    - Items removed from description: Deleted from database
+    - Existing items: Preserved with their current is_checked state
+    - Archived events: Skipped entirely (no modifications)
+
+    Note: This function deletes ALL items not in the parsed description,
+    including manual items. The sync service treats the description as
+    the source of truth for item lists.
+
+    Args:
+        session: Database session for persistence.
+        event: The event to sync items for.
+        description: Event description text to parse, may be None.
+    """
     if event.is_archived:
         return  # Don't modify archived events
 
@@ -299,7 +413,19 @@ def _sync_items(session: Session, event: Event, description: str | None) -> None
 
 
 def _sync_attendees(session: Session, event: Event, attendees: list) -> None:
-    """Sync attendees from Google event."""
+    """Synchronize attendees from Google Calendar event data.
+
+    Replaces all existing attendees with the current list from Google.
+    Unlike items, attendees have no local state to preserve, so a full
+    replacement is simpler and ensures consistency with Google Calendar.
+
+    Args:
+        session: Database session for persistence.
+        event: The event to sync attendees for.
+        attendees: List of attendee dicts from Google Calendar API,
+            each containing 'email', optional 'displayName', and
+            'responseStatus' fields.
+    """
     # Clear existing and recreate
     for attendee in event.attendees:
         session.delete(attendee)

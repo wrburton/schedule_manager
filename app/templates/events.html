@@ -3,6 +3,31 @@
 {% block title %}Upcoming Events{% endblock %}
 
 {% block content %}
+{% if not sync_status.success %}
+<div class="themed-card rounded-lg p-4 mb-6 border-l-4 border-yellow-500 bg-yellow-50 dark:bg-yellow-900/20">
+    <div class="flex items-start">
+        <svg class="w-6 h-6 text-yellow-500 mr-3 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+        </svg>
+        <div class="flex-1">
+            <h3 class="font-semibold text-yellow-800 dark:text-yellow-200">Calendar Sync Failed</h3>
+            <p class="text-sm text-yellow-700 dark:text-yellow-300 mt-1">
+                {% if sync_status.error and 'credentials' in sync_status.error.lower() %}
+                Authentication failed. Please <a href="/auth/setup" class="underline font-medium hover:opacity-80">reconfigure your credentials</a>.
+                {% else %}
+                Unable to sync with Google Calendar. The sync will retry automatically.
+                {% endif %}
+            </p>
+            {% if sync_status.last_sync_time %}
+            <p class="text-xs text-yellow-600 dark:text-yellow-400 mt-2">
+                Last attempt: {{ sync_status.last_sync_time.strftime('%b %d, %Y at %I:%M %p') }}
+            </p>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endif %}
+
 <div class="flex justify-between items-center mb-6">
     <h1 class="text-2xl font-bold themed-text">Upcoming Events</h1>
     {% if not has_auth %}
@@ -24,7 +49,14 @@
 </div>
 {% endif %}
 
-<!-- Today's Events - Large Cards -->
+{#
+    ============================================================
+    TODAY'S EVENTS - Full Card Layout
+    ============================================================
+    Events happening today get the full treatment: large cards with
+    all details visible (attendees, full checklist, action buttons).
+    This is because today's events need immediate attention.
+#}
 {% if today_events %}
 <div class="mb-8">
     <h2 class="text-lg font-semibold themed-text-secondary mb-4">Today</h2>
@@ -125,7 +157,7 @@
             <p class="themed-text-muted text-sm">No items yet. Add items below or include them in your Google Calendar event description.</p>
             {% endif %}
 
-            <!-- Add item form -->
+            {# Add item form - allows users to add new checklist items #}
             <form action="/events/{{ event.id }}/items" method="post" class="mt-3">
                 <div class="flex">
                     <input type="text" name="name" placeholder="Add item..."
@@ -135,6 +167,14 @@
                         Add
                     </button>
                 </div>
+                {# RECURRING EVENT FEATURE: "Add to all future instances"
+                   When checked, the new item is:
+                   1. Added to this event instance (always)
+                   2. Pushed to the MASTER recurring event in Google Calendar
+                      (so future instances inherit it)
+                   3. Added to all LOCAL instances within the sync window
+                   This ensures the item appears everywhere, even for instances
+                   beyond the current 30-day sync window. #}
                 {% if event.recurring_event_id %}
                 <label class="flex items-center mt-2 text-xs themed-text-muted cursor-pointer">
                     <input type="checkbox" name="add_to_all" value="true" class="mr-2 rounded themed-border">
@@ -171,6 +211,7 @@
 </div>
 {% endif %}
 
+{# Tomorrow's events use the same card layout as today's events #}
 <!-- Tomorrow's Events - Large Cards -->
 {% if tomorrow_events %}
 <div class="mb-8">
@@ -318,14 +359,43 @@
 </div>
 {% endif %}
 
-<!-- Events from day after tomorrow to 2 weeks - Compact List -->
+{#
+    ============================================================
+    COMING UP - Compact List with Date Grouping
+    ============================================================
+    Events 2+ days away are shown in a more compact format since
+    they don't need immediate attention. They're grouped by date
+    for easier scanning.
+
+    JINJA2 NAMESPACE PATTERN:
+    We need to track the previous date across loop iterations to
+    detect when we should start a new date group. However, Jinja2
+    variables set inside a loop are scoped to that iteration and
+    don't persist.
+
+    The solution is to use `namespace()` which creates an object
+    whose attributes CAN be modified inside loops:
+
+        {% set ns = namespace(prev_date=None) %}  <- Create namespace
+        {% for event in events %}
+            {% set ns.prev_date = current_date %}  <- Modify attribute
+        {% endfor %}
+
+    Without namespace, this would NOT work:
+        {% set prev_date = None %}
+        {% for event in events %}
+            {% set prev_date = current_date %}  <- Creates NEW variable, doesn't modify outer
+        {% endfor %}
+#}
 {% if later_events %}
 <div>
     <h2 class="text-lg font-semibold themed-text-secondary mb-4">Coming Up</h2>
     <div class="space-y-3">
+    {# Create a namespace to track the previous date across iterations #}
     {% set ns = namespace(prev_date=None) %}
     {% for event in later_events %}
         {% set current_date = event.start_time.date() %}
+        {# When the date changes, close the previous card and open a new one #}
         {% if ns.prev_date != current_date %}
             {% if ns.prev_date is not none %}</div>{% endif %}
             <div class="themed-card rounded-lg divide-y themed-border">
@@ -355,7 +425,9 @@
                 </svg>
             </div>
         </a>
+        {# Update the tracked date for the next iteration #}
         {% set ns.prev_date = current_date %}
+        {# Close the final date group card when we reach the last event #}
         {% if loop.last %}</div>{% endif %}
     {% endfor %}
     </div>

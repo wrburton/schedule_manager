@@ -67,20 +67,38 @@ def main():
 
     flow = InstalledAppFlow.from_client_config(client_config, SCOPES)
 
+    # Allow HTTP for localhost (required for manual copy-paste flow)
+    os.environ["OAUTHLIB_INSECURE_TRANSPORT"] = "1"
+
     print("=" * 60)
     print("Google Calendar OAuth Setup")
     print("=" * 60)
     print()
-    print("A browser window will open for you to authorize access.")
-    print("After authorizing, you'll receive a refresh token.")
+    print("Copy the URL below and open it in a browser (on any machine).")
+    print("After authorizing, you'll be redirected to a localhost URL.")
+    print("Copy the FULL redirect URL and paste it back here.")
     print()
 
-    # Run local server flow (opens browser, handles callback automatically)
-    credentials = flow.run_local_server(
-        port=8080,
-        prompt="consent",
+    # Set redirect URI for manual copy-paste flow
+    flow.redirect_uri = "http://localhost:8080/"
+
+    # Generate authorization URL
+    auth_url, _ = flow.authorization_url(
         access_type="offline",
+        prompt="consent",
     )
+
+    print("Open this URL in a browser:")
+    print()
+    print(auth_url)
+    print()
+
+    # Get the full redirect URL from user
+    redirect_response = input("Paste the full redirect URL here: ").strip()
+
+    # Exchange the authorization response for credentials
+    flow.fetch_token(authorization_response=redirect_response)
+    credentials = flow.credentials
 
     print()
     print("=" * 60)

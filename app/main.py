@@ -1,6 +1,7 @@
 """Calendar Checklist Web Application."""
 import logging
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -13,9 +14,14 @@ from app.core.scheduler import shutdown_scheduler, start_scheduler
 from app.routes import auth, events, items, sync
 
 # Configure logging
+log_dir = Path.home() / ".logs" / "scheduler"
+log_dir.mkdir(parents=True, exist_ok=True)
+log_file = log_dir / "latest.log"
+
 logging.basicConfig(
     level=logging.DEBUG if settings.debug else logging.INFO,
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    filename=str(log_file),
 )
 logger = logging.getLogger(__name__)
 

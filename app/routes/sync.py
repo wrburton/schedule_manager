@@ -21,10 +21,16 @@ async def trigger_sync(session: Session = Depends(get_session)):
     not configured, otherwise redirects to the upcoming events page.
     """
     if not has_valid_credentials():
+        SyncState.record_sync_failure("No valid credentials")
         return RedirectResponse("/auth/setup", status_code=303)
 
-    sync_calendar(session)
-    # Redirect back to upcoming events after sync
+    try:
+        sync_calendar(session)
+    except Exception:
+        # Failure already recorded in sync_calendar, just redirect to show the banner
+        pass
+
+    # Redirect back to upcoming events after sync (banner will show if sync failed)
     return RedirectResponse("/events/upcoming", status_code=303)
 
 
@@ -38,10 +44,14 @@ async def sync_status():
     """
     has_sync_token = SyncState.get_token(settings.google_calendar_id) is not None
     has_auth = has_valid_credentials()
+    status = SyncState.get_sync_status()
 
     return {
         "authenticated": has_auth,
         "has_sync_token": has_sync_token,
         "sync_interval_minutes": settings.sync_interval_minutes,
         "calendar_id": settings.google_calendar_id,
+        "last_sync_time": status["last_sync_time"].isoformat() if status["last_sync_time"] else None,
+        "last_sync_success": status["success"],
+        "last_sync_error": status["error"],
     }

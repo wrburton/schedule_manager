@@ -3,6 +3,7 @@ from fastapi import APIRouter
 from fastapi.responses import HTMLResponse
 
 from app.calendar.client import has_valid_credentials
+from app.calendar.sync import SyncState
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -28,13 +29,21 @@ async def auth_status():
 @router.get("/setup", response_class=HTMLResponse)
 async def setup_instructions():
     """
-    Display setup instructions if not authenticated.
+    Display setup instructions if not authenticated or if credentials are invalid.
 
     Shows step-by-step instructions for configuring Google OAuth credentials.
-    If already authenticated, displays a confirmation message with a link
+    If already authenticated and working, displays a confirmation message with a link
     to the events page.
     """
-    if has_valid_credentials():
+    # Check if there's a credential-related sync error
+    sync_status = SyncState.get_sync_status()
+    has_credential_error = (
+        not sync_status["success"]
+        and sync_status["error"]
+        and "credential" in sync_status["error"].lower()
+    )
+
+    if has_valid_credentials() and not has_credential_error:
         return """
         <html>
         <head><title>Already Configured</title></head>

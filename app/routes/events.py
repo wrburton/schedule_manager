@@ -8,7 +8,7 @@ from fastapi.templating import Jinja2Templates
 from sqlmodel import Session, select
 
 from app.calendar.client import has_valid_credentials
-from app.calendar.sync import has_unpushed_changes
+from app.calendar.sync import SyncState, has_unpushed_changes
 from app.core.database import get_session
 from app.models import ChecklistConfirmation, Event
 
@@ -72,6 +72,9 @@ async def upcoming_events(request: Request, session: Session = Depends(get_sessi
     for event in today_events + tomorrow_events + later_events:
         unpushed_status[str(event.id)] = has_unpushed_changes(event)
 
+    # Get sync status for warning banner
+    sync_status = SyncState.get_sync_status()
+
     return templates.TemplateResponse(
         "events.html",
         {
@@ -81,6 +84,7 @@ async def upcoming_events(request: Request, session: Session = Depends(get_sessi
             "later_events": later_events,
             "has_auth": has_auth,
             "unpushed_status": unpushed_status,
+            "sync_status": sync_status,
             "today": now.date(),
         },
     )

@@ -485,6 +485,39 @@
         return match ? match[1] : 'dark-neon'; // Default theme
     }
 
+    // ==================== VISIBILITY REFRESH ====================
+    /*
+     * AUTO-REFRESH ON TAB VISIBILITY CHANGE
+     * When the user navigates away from this tab and returns, the page data
+     * may be stale (background sync may have updated events). This listener
+     * reloads the page when the tab becomes visible again, but only if:
+     * - The tab was hidden for at least 60 seconds (to avoid unnecessary reloads)
+     * - We're on a page that shows dynamic event data
+     *
+     * This provides a good balance between fresh data and avoiding disruptive reloads.
+     */
+    (function() {
+        let lastVisibleTime = Date.now();
+        const REFRESH_THRESHOLD_MS = 60 * 1000; // 60 seconds
+
+        document.addEventListener('visibilitychange', function() {
+            if (document.visibilityState === 'visible') {
+                const hiddenDuration = Date.now() - lastVisibleTime;
+                // Only refresh if hidden for more than threshold
+                if (hiddenDuration > REFRESH_THRESHOLD_MS) {
+                    // Only refresh on pages with dynamic event content
+                    const path = window.location.pathname;
+                    if (path.startsWith('/events')) {
+                        window.location.reload();
+                    }
+                }
+            } else {
+                // Tab is being hidden - record the time
+                lastVisibleTime = Date.now();
+            }
+        });
+    })();
+
     // ==================== INITIALIZATION ====================
     document.addEventListener('DOMContentLoaded', function() {
         // Restore saved theme preference

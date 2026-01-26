@@ -324,22 +324,25 @@ def _upsert_event(session: Session, google_event: dict) -> bool:
         existing.recurring_event_id = google_event.get("recurringEventId")
         existing.last_synced = datetime.now(UTC)
 
-        # === CONFLICT RESOLUTION: Checklist Reset on Time Change ===
-        # Only reset if the event hasn't been archived (archived = frozen state).
-        # This ensures users re-check items when meetings are rescheduled.
-        if time_changed and not existing.is_archived:
-            logger.info(f"Event time changed, resetting checklist for {existing.title}")
-            for item in existing.items:
-                item.is_checked = False
-
         # Handle orphaned recurring instances (see _cleanup_orphaned_instance docstring)
         recurring_event_id = google_event.get("recurringEventId")
         if recurring_event_id:
             _cleanup_orphaned_instance(session, recurring_event_id, start_time, google_id)
 
         # Sync items and attendees from the updated description
+        # IMPORTANT: Sync items BEFORE resetting is_checked to avoid accessing
+        # items that get deleted during sync (causes "Instance has been deleted" error)
         _sync_items(session, existing, google_event.get("description"))
         _sync_attendees(session, existing, google_event.get("attendees", []))
+
+        # === CONFLICT RESOLUTION: Checklist Reset on Time Change ===
+        # Only reset if the event hasn't been archived (archived = frozen state).
+        # This ensures users re-check items when meetings are rescheduled.
+        # Done AFTER _sync_items so we only reset items that still exist.
+        if time_changed and not existing.is_archived:
+            logger.info(f"Event time changed, resetting checklist for {existing.title}")
+            for item in existing.items:
+                item.is_checked = False
 
         session.add(existing)
         return False
@@ -407,9 +410,17 @@ def _sync_items(session: Session, event: Event, description: str | None) -> None
             session.add(item)
 
     # Remove items no longer in description (both parsed and manual)
+    deleted_any = False
     for name, item in existing_items.items():
         if name not in parsed_set:
             session.delete(item)
+            deleted_any = True
+
+    # Expire the items relationship cache after deletions to prevent
+    # "Instance has been deleted" errors when the relationship is accessed
+    # again later in the same session
+    if deleted_any:
+        session.expire(event, ["items"])
 
 
 def _sync_attendees(session: Session, event: Event, attendees: list) -> None:
@@ -427,8 +438,13 @@ def _sync_attendees(session: Session, event: Event, attendees: list) -> None:
             'responseStatus' fields.
     """
     # Clear existing and recreate
-    for attendee in event.attendees:
+    existing_attendees = list(event.attendees)  # Copy list before deleting
+    for attendee in existing_attendees:
         session.delete(attendee)
+
+    # Expire the attendees relationship cache after deletions
+    if existing_attendees:
+        session.expire(event, ["attendees"])
 
     for att in attendees:
         attendee = Attendee(

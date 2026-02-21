@@ -1,5 +1,5 @@
 """Sync routes for triggering and monitoring calendar sync."""
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 from fastapi.responses import RedirectResponse
 from sqlmodel import Session
 
@@ -12,7 +12,7 @@ router = APIRouter(prefix="/sync", tags=["sync"])
 
 
 @router.post("/now")
-async def trigger_sync(session: Session = Depends(get_session)):
+async def trigger_sync(request: Request, session: Session = Depends(get_session)):
     """
     Manually trigger calendar sync.
 
@@ -20,9 +20,10 @@ async def trigger_sync(session: Session = Depends(get_session)):
     updated events. Redirects to the auth setup page if credentials are
     not configured, otherwise redirects to the upcoming events page.
     """
+    rp = request.scope.get("root_path", "")
     if not has_valid_credentials():
         SyncState.record_sync_failure("No valid credentials")
-        return RedirectResponse("/auth/setup", status_code=303)
+        return RedirectResponse(f"{rp}/auth/setup", status_code=303)
 
     try:
         sync_calendar(session)
@@ -31,7 +32,7 @@ async def trigger_sync(session: Session = Depends(get_session)):
         pass
 
     # Redirect back to upcoming events after sync (banner will show if sync failed)
-    return RedirectResponse("/events/upcoming", status_code=303)
+    return RedirectResponse(f"{rp}/events/upcoming", status_code=303)
 
 
 @router.get("/status")

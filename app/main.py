@@ -3,7 +3,7 @@ import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
@@ -71,9 +71,10 @@ app.include_router(sync.router)
 
 
 @app.get("/")
-async def root():
+async def root(request: Request):
     """Redirect root to upcoming events."""
-    return RedirectResponse("/events/upcoming")
+    rp = request.scope.get("root_path", "")
+    return RedirectResponse(f"{rp}/events/upcoming")
 
 
 @app.get("/health")

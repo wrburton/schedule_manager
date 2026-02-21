@@ -14,6 +14,9 @@ from app.models import ChecklistConfirmation, Event
 
 router = APIRouter(prefix="/events", tags=["events"])
 templates = Jinja2Templates(directory="app/templates")
+# rp(request) returns the ASGI root_path (e.g. "/schedule") set by uvicorn's
+# --root-path flag, so templates can prefix absolute hrefs without hardcoding.
+templates.env.globals["rp"] = lambda req: req.scope.get("root_path", "")
 
 
 @router.get("/upcoming", response_class=HTMLResponse)
@@ -139,7 +142,7 @@ async def event_detail(
 
 
 @router.post("/{event_id}/confirm")
-async def confirm_event(event_id: UUID, session: Session = Depends(get_session)):
+async def confirm_event(event_id: UUID, request: Request, session: Session = Depends(get_session)):
     """
     Confirm event checklist is complete.
 
@@ -167,11 +170,12 @@ async def confirm_event(event_id: UUID, session: Session = Depends(get_session))
     session.add(confirmation)
     session.commit()
 
-    return RedirectResponse(f"/events/{event_id}", status_code=303)
+    rp = request.scope.get("root_path", "")
+    return RedirectResponse(f"{rp}/events/{event_id}", status_code=303)
 
 
 @router.post("/{event_id}/archive")
-async def archive_event(event_id: UUID, session: Session = Depends(get_session)):
+async def archive_event(event_id: UUID, request: Request, session: Session = Depends(get_session)):
     """
     Archive event (move to read-only).
 
@@ -186,11 +190,12 @@ async def archive_event(event_id: UUID, session: Session = Depends(get_session))
     session.add(event)
     session.commit()
 
-    return RedirectResponse("/events/archive", status_code=303)
+    rp = request.scope.get("root_path", "")
+    return RedirectResponse(f"{rp}/events/archive", status_code=303)
 
 
 @router.post("/{event_id}/unarchive")
-async def unarchive_event(event_id: UUID, session: Session = Depends(get_session)):
+async def unarchive_event(event_id: UUID, request: Request, session: Session = Depends(get_session)):
     """
     Unarchive event.
 
@@ -205,4 +210,5 @@ async def unarchive_event(event_id: UUID, session: Session = Depends(get_session
     session.add(event)
     session.commit()
 
-    return RedirectResponse(f"/events/{event_id}", status_code=303)
+    rp = request.scope.get("root_path", "")
+    return RedirectResponse(f"{rp}/events/{event_id}", status_code=303)

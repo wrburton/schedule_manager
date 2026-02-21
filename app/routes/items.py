@@ -27,6 +27,7 @@ def wants_json(request: Request) -> bool:
 @router.post("")
 async def create_item(
     event_id: UUID,
+    request: Request,
     name: str = Form(...),
     add_to_all: bool = Form(False),
     session: Session = Depends(get_session),
@@ -61,7 +62,8 @@ async def create_item(
         session.refresh(event)
         push_item_to_recurring_instances(session, event, name.strip())
 
-    return RedirectResponse(f"/events/{event_id}", status_code=303)
+    rp = request.scope.get("root_path", "")
+    return RedirectResponse(f"{rp}/events/{event_id}", status_code=303)
 
 
 @router.post("/{item_id}/toggle")
@@ -102,13 +104,15 @@ async def toggle_item(
             "all_checked": checked_count == total_count,
         })
 
-    return RedirectResponse(f"/events/{event_id}", status_code=303)
+    rp = request.scope.get("root_path", "")
+    return RedirectResponse(f"{rp}/events/{event_id}", status_code=303)
 
 
 @router.post("/{item_id}/delete")
 async def delete_item(
     event_id: UUID,
     item_id: UUID,
+    request: Request,
     delete_from_all: bool = Form(False),
     session: Session = Depends(get_session),
 ):
@@ -156,12 +160,14 @@ async def delete_item(
     else:
         session.commit()
 
-    return RedirectResponse(f"/events/{event_id}", status_code=303)
+    rp = request.scope.get("root_path", "")
+    return RedirectResponse(f"{rp}/events/{event_id}", status_code=303)
 
 
 @router.post("/push")
 async def push_items(
     event_id: UUID,
+    request: Request,
     session: Session = Depends(get_session),
 ):
     """
@@ -181,4 +187,5 @@ async def push_items(
     if stats["pushed"] == 0 and stats["failed"] > 0:
         raise HTTPException(status_code=500, detail="Failed to push items to calendar")
 
-    return RedirectResponse(f"/events/{event_id}", status_code=303)
+    rp = request.scope.get("root_path", "")
+    return RedirectResponse(f"{rp}/events/{event_id}", status_code=303)

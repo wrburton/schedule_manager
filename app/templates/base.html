@@ -398,12 +398,12 @@
             <nav class="themed-nav shadow-sm relative">
                 <div class="max-w-4xl mx-auto px-4 py-3">
                     <div class="flex justify-between items-center">
-                        <a href="/events/upcoming" class="text-xl font-semibold themed-text neon-text">
+                        <a href="{{ rp(request) }}/events/upcoming" class="text-xl font-semibold themed-text neon-text">
                             Calendar Checklist
                         </a>
                         <div class="flex items-center space-x-2">
                             <!-- Sync Now button -->
-                            <form action="/sync/now" method="post">
+                            <form action="{{ rp(request) }}/sync/now" method="post">
                                 <button type="submit" class="themed-accent hover:opacity-80 px-2 py-1">
                                     Sync
                                 </button>
@@ -421,8 +421,8 @@
                 <!-- Menu dropdown -->
                 <div id="mobile-menu" class="hidden absolute top-full left-0 right-0 themed-nav border-t themed-border shadow-lg z-50">
                     <div class="max-w-4xl mx-auto px-4 py-3 space-y-3">
-                        <a href="/events/upcoming" class="block py-2 themed-text-secondary hover:themed-text">Upcoming</a>
-                        <a href="/events/archive" class="block py-2 themed-text-secondary hover:themed-text">Archive</a>
+                        <a href="{{ rp(request) }}/events/upcoming" class="block py-2 themed-text-secondary hover:themed-text">Upcoming</a>
+                        <a href="{{ rp(request) }}/events/archive" class="block py-2 themed-text-secondary hover:themed-text">Archive</a>
                         <div class="py-2">
                             <label class="block text-sm themed-text-muted mb-1">Theme</label>
                             <select id="theme-selector" class="theme-selector themed-border w-full" onchange="setTheme(this.value)">
@@ -507,7 +507,7 @@
                 if (hiddenDuration > REFRESH_THRESHOLD_MS) {
                     // Only refresh on pages with dynamic event content
                     const path = window.location.pathname;
-                    if (path.startsWith('/events')) {
+                    if (path.startsWith('{{ rp(request) }}/events')) {
                         window.location.reload();
                     }
                 }

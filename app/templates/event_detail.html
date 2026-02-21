@@ -4,7 +4,7 @@
 
 {% block content %}
 <div class="mb-6">
-    <a href="/events/upcoming" class="themed-accent hover:opacity-80">&larr; Back to upcoming</a>
+    <a href="{{ rp(request) }}/events/upcoming" class="themed-accent hover:opacity-80">&larr; Back to upcoming</a>
 </div>
 
 <div class="themed-card rounded-lg p-6 neon-border{% if event.start_time.date() == today %} pulse-glow{% endif %}" data-event-id="{{ event.id }}">
@@ -111,7 +111,7 @@
         <div class="space-y-2">
         {% for item in event.items %}
             <div class="flex items-center justify-between group" data-item-id="{{ item.id }}">
-                <form action="/events/{{ event.id }}/items/{{ item.id }}/toggle" method="post" class="flex items-center flex-1">
+                <form action="{{ rp(request) }}/events/{{ event.id }}/items/{{ item.id }}/toggle" method="post" class="flex items-center flex-1">
                     <button type="submit" class="flex items-center w-full text-left p-2 rounded hover:opacity-80" data-toggle-item>
                         <span data-checkbox class="w-5 h-5 border rounded mr-3 flex items-center justify-center flex-shrink-0 themed-checkbox
                             {% if item.is_checked %}checked{% endif %}">
@@ -127,13 +127,13 @@
                     </button>
                 </form>
                 <div class="opacity-0 group-hover:opacity-100 flex items-center">
-                    <form action="/events/{{ event.id }}/items/{{ item.id }}/delete" method="post">
+                    <form action="{{ rp(request) }}/events/{{ event.id }}/items/{{ item.id }}/delete" method="post">
                         <button type="submit" class="themed-danger hover:opacity-80 text-sm px-2">
                             Delete
                         </button>
                     </form>
                     {% if event.recurring_event_id %}
-                    <form action="/events/{{ event.id }}/items/{{ item.id }}/delete" method="post">
+                    <form action="{{ rp(request) }}/events/{{ event.id }}/items/{{ item.id }}/delete" method="post">
                         <input type="hidden" name="delete_from_all" value="true">
                         <button type="submit" class="themed-danger opacity-70 hover:opacity-100 text-xs px-1 border-l themed-border">
                             All
@@ -146,7 +146,7 @@
         </div>
 
         <!-- Add item form -->
-        <form action="/events/{{ event.id }}/items" method="post" class="mt-4">
+        <form action="{{ rp(request) }}/events/{{ event.id }}/items" method="post" class="mt-4">
             <div class="flex">
                 <input type="text" name="name" placeholder="Add item..."
                        class="flex-1 border rounded-l px-3 py-2 themed-input focus:outline-none"
@@ -169,7 +169,7 @@
     <div class="flex flex-wrap gap-3 pt-6 border-t themed-border">
         {% if not event.is_archived %}
             {% if not event.confirmations %}
-            <form action="/events/{{ event.id }}/confirm" method="post">
+            <form action="{{ rp(request) }}/events/{{ event.id }}/confirm" method="post">
                 <button type="submit"
                         class="themed-btn-success px-4 py-2 rounded disabled:opacity-50 disabled:cursor-not-allowed"
                         data-confirm-btn
@@ -178,12 +178,12 @@
                 </button>
             </form>
             {% endif %}
-            <form action="/events/{{ event.id }}/archive" method="post">
+            <form action="{{ rp(request) }}/events/{{ event.id }}/archive" method="post">
                 <button type="submit" class="border themed-border themed-text-secondary px-4 py-2 rounded hover:opacity-80">
                     Archive
                 </button>
             </form>
-            <form action="/events/{{ event.id }}/items/push" method="post">
+            <form action="{{ rp(request) }}/events/{{ event.id }}/items/push" method="post">
                 <button type="submit" class="border themed-border themed-accent px-4 py-2 rounded hover:opacity-80 relative">
                     Push to Calendar
                     {% if has_unpushed %}
@@ -192,7 +192,7 @@
                 </button>
             </form>
         {% else %}
-            <form action="/events/{{ event.id }}/unarchive" method="post">
+            <form action="{{ rp(request) }}/events/{{ event.id }}/unarchive" method="post">
                 <button type="submit" class="border themed-border themed-text-secondary px-4 py-2 rounded hover:opacity-80">
                     Unarchive
                 </button>

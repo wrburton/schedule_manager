@@ -8,8 +8,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
+from sqlmodel import Session
+
+from app.calendar.sync import SyncState
 from app.core.config import settings
-from app.core.database import create_db_and_tables
+from app.core.database import create_db_and_tables, engine
 from app.core.scheduler import shutdown_scheduler, start_scheduler
 from app.routes import auth, events, items, sync
 
@@ -32,6 +35,8 @@ async def lifespan(app: FastAPI):
     # Startup
     logger.info("Starting Calendar Checklist application")
     create_db_and_tables()
+    with Session(engine) as session:
+        SyncState.load(session)
     start_scheduler()
     yield
     # Shutdown

@@ -120,3 +120,44 @@ More text"""
         result = format_items_to_description(items, existing)
         assert "Old item" not in result
         assert "New item" in result
+
+    def test_replaces_checklist_header(self):
+        """Descriptions using Checklist: must not be duplicated when pushed back."""
+        existing = "Meeting notes\n\nChecklist:\n- Laptop\n- Charger\n"
+        result = format_items_to_description(["Laptop", "Charger"], existing)
+        assert result.count("Laptop") == 1
+        assert "Checklist:" not in result
+        assert "Items:" in result
+
+    def test_replaces_bring_header(self):
+        existing = "Bring:\n- Snacks\n- Water\n"
+        result = format_items_to_description(["Snacks", "Water"], existing)
+        assert result.count("Snacks") == 1
+        assert "Bring:" not in result
+
+    def test_replaces_pack_header(self):
+        existing = "Pack:\n- Tent\n- Sleeping bag\n"
+        result = format_items_to_description(["Tent"], existing)
+        assert "Pack:" not in result
+        assert result.count("Tent") == 1
+
+    def test_replaces_numbered_list(self):
+        """Numbered-list bullets in a section should be stripped on round-trip."""
+        existing = "Items:\n1. First\n2. Second\n"
+        result = format_items_to_description(["First", "Second"], existing)
+        assert result.count("First") == 1
+        assert result.count("Second") == 1
+
+    def test_replaces_checkbox_bullets(self):
+        """[ ] / [x] bullets in a section should be stripped on round-trip."""
+        existing = "Items:\n[ ] Unchecked\n[x] Checked\n"
+        result = format_items_to_description(["Unchecked", "Checked"], existing)
+        assert result.count("Unchecked") == 1
+        assert result.count("Checked") == 1
+
+    def test_non_item_content_preserved(self):
+        """Content outside the checklist section must survive a round-trip."""
+        existing = "Join: https://meet.example.com\n\nItems:\n- Laptop\n"
+        result = format_items_to_description(["Laptop"], existing)
+        assert "Join: https://meet.example.com" in result
+        assert result.count("Laptop") == 1

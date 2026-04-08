@@ -67,17 +67,25 @@ def parse_items_from_description(description: str | None) -> list[str]:
     return items
 
 
+_SECTION_HEADER = r"(?:Items|Checklist|Things to bring|Required|Bring|Pack)"
+# Matches any supported bullet style on a single line
+_BULLET_LINE = r"[ \t]*(?:[-*\u2022]|\[[ xX]?\]|\d+[.)]).+(?:\n|$)"
+
+
 def format_items_to_description(
     items: list[str], existing_description: str = ""
 ) -> str:
     """
     Format items back into description text for pushing to Google Calendar.
 
-    Removes existing Items section and appends new one.
+    Removes any existing checklist section (all headers recognised by the
+    parser: Items, Checklist, Things to bring, Required, Bring, Pack) and
+    appends a canonical Items section.
     """
-    # Remove existing Items section
+    # Strip all recognised section headers and their bullet lines so we don't
+    # end up with duplicate sections when the original used a different header.
     cleaned = re.sub(
-        r"Items:\s*\n(?:[-*\u2022]\s+.+\n?)*",
+        rf"{_SECTION_HEADER}:\s*\n(?:{_BULLET_LINE})*",
         "",
         existing_description,
         flags=re.IGNORECASE,

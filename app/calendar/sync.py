@@ -8,22 +8,22 @@ from sqlmodel import Session, select
 from app.calendar.client import get_calendar_service, has_valid_credentials
 from app.calendar.parser import format_items_to_description, parse_items_from_description
 from app.core.config import settings
-from app.models import Attendee, Event, Item
+from app.models import Attendee, Event, Item, SyncStateRecord
 
 logger = logging.getLogger(__name__)
 
 
 class SyncState:
-    """In-memory storage for Google Calendar sync tokens and status.
+    """In-memory cache for Google Calendar sync tokens and status.
 
     Google Calendar API uses sync tokens for incremental synchronization.
     After a full sync, the API returns a nextSyncToken. On subsequent
     syncs, providing this token returns only events that changed since
     the last sync, dramatically reducing API calls and data transfer.
 
-    This class stores tokens in memory (lost on restart). When a token
-    is missing or expired (HTTP 410), a full sync is performed and a
-    new token is obtained.
+    State is held in memory for fast reads and persisted to the
+    ``sync_state`` database table on every write so it survives restarts.
+    Call :meth:`load` once at application startup to restore persisted state.
 
     Attributes:
         _tokens: Dictionary mapping calendar IDs to their sync tokens.
@@ -71,6 +71,44 @@ class SyncState:
             "success": cls._last_sync_success,
             "error": cls._last_sync_error,
         }
+
+    @classmethod
+    def load(cls, session: Session) -> None:
+        """Restore in-memory state from the database.
+
+        Call once at application startup after tables are created.
+        Silently does nothing if no rows exist yet (first run).
+        """
+        records = session.exec(select(SyncStateRecord)).all()
+        for record in records:
+            if record.sync_token:
+                cls._tokens[record.calendar_id] = record.sync_token
+            # Use the most recent record's status fields (normally one row).
+            # SQLite strips timezone info on read, so normalise to UTC.
+            if record.last_sync_time is not None and record.last_sync_time.tzinfo is None:
+                cls._last_sync_time = record.last_sync_time.replace(tzinfo=UTC)
+            else:
+                cls._last_sync_time = record.last_sync_time
+            cls._last_sync_success = record.last_sync_success
+            cls._last_sync_error = record.last_sync_error
+        if records:
+            logger.info(f"Restored sync state for {len(records)} calendar(s) from database")
+
+    @classmethod
+    def _persist(cls, session: Session, calendar_id: str) -> None:
+        """Write current state for one calendar to the database.
+
+        Uses an upsert pattern (get-or-create). The caller is responsible
+        for calling ``session.commit()`` after this method returns.
+        """
+        record = session.get(SyncStateRecord, calendar_id)
+        if record is None:
+            record = SyncStateRecord(calendar_id=calendar_id)
+        record.sync_token = cls._tokens.get(calendar_id)
+        record.last_sync_time = cls._last_sync_time
+        record.last_sync_success = cls._last_sync_success
+        record.last_sync_error = cls._last_sync_error
+        session.add(record)
 
 
 def sync_calendar(session: Session) -> dict:
@@ -183,8 +221,9 @@ def sync_calendar(session: Session) -> dict:
         if new_token:
             SyncState.set_token(calendar_id, new_token)
 
-        session.commit()
         SyncState.record_sync_success()
+        SyncState._persist(session, calendar_id)
+        session.commit()
 
     except HttpError as e:
         if e.resp.status == 410:
@@ -194,10 +233,14 @@ def sync_calendar(session: Session) -> dict:
             return sync_calendar(session)
         logger.error(f"Sync failed: {e}")
         SyncState.record_sync_failure(str(e))
+        SyncState._persist(session, calendar_id)
+        session.commit()
         raise
     except Exception as e:
         logger.error(f"Sync failed: {e}")
         SyncState.record_sync_failure(str(e))
+        SyncState._persist(session, calendar_id)
+        session.commit()
         raise
 
     logger.info(f"Sync completed: {stats}")
@@ -211,8 +254,9 @@ def _parse_datetime(dt_dict: dict) -> datetime:
         # DateTime with timezone
         return datetime.fromisoformat(dt_str.replace("Z", "+00:00"))
     else:
-        # All-day event (date only)
-        return datetime.strptime(dt_str, "%Y-%m-%d")
+        # All-day event (date only) — treat as midnight UTC so comparisons
+        # with other UTC-aware datetimes work correctly.
+        return datetime.strptime(dt_str, "%Y-%m-%d").replace(tzinfo=UTC)
 
 
 def _cleanup_orphaned_instance(

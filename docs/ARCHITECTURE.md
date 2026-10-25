@@ -96,7 +96,8 @@ Calendar Checklist is a web application that integrates with Google Calendar to 
 | Configuration | Pydantic Settings | Environment-based config |
 | Scheduler | APScheduler | Background sync jobs |
 | Templates | Jinja2 | Server-side HTML rendering |
-| Styling | Tailwind CSS | Utility-first CSS framework |
+| Styling | Tailwind CSS 4 | Built on the server by the deploy hooks (`scripts/build_css.sh`) |
+| Behaviour | Alpine.js + htmx | `x-confirm`, tab refresh; checklist ticks swap the card in place |
 | Calendar API | google-api-python-client | Google Calendar integration |
 | Authentication | Google OAuth2 | API authorization |
 
@@ -125,16 +126,28 @@ schedule_manager/
 │   │   ├── events.py           # Event listing, confirmation, archiving
 │   │   ├── items.py            # Checklist item CRUD, toggle
 │   │   └── sync.py             # Manual sync trigger, status
+│   ├── web.py                  # Shared Jinja templates object, rp(request), is_htmx()
+│   ├── static/
+│   │   ├── css/src/            # Tailwind sources: app.css (theme), components.css
+│   │   └── js/                 # app.js (Alpine components), vendored Alpine and htmx
 │   └── templates/
-│       ├── base.html           # Layout, navigation, JavaScript
+│       ├── base.html           # Layout, navigation, scripts
+│       ├── _macros.html        # Checklist, counter, confirm-button macros
+│       ├── _event_card.html    # An upcoming event's card (htmx partial)
+│       ├── _event_detail_card.html  # The event page's card (htmx partial)
 │       ├── events.html         # Upcoming events view
 │       ├── event_detail.html   # Single event view
 │       ├── archive.html        # Archived events view
-│       └── auth_setup.html     # OAuth setup instructions
+│       └── setup.html          # OAuth setup instructions
+├── deploy/
+│   └── schedule_manager.service  # User-level systemd unit
 ├── docs/
 │   └── ARCHITECTURE.md         # This file
 ├── scripts/
-│   └── get_token.py            # One-time OAuth token acquisition
+│   ├── get_token.py            # One-time OAuth token acquisition
+│   ├── build_css.sh            # Tailwind build (run by the deploy hooks)
+│   ├── install_service.sh      # Installs the systemd unit on the server
+│   └── git-hooks/              # pre-receive / post-receive for the live checkout
 ├── tests/
 ├── pyproject.toml
 └── README.md
@@ -292,64 +305,43 @@ The scheduler triggers a sync every 5 minutes (configurable).
 +------------------------+
 ```
 
-### 2. Checkbox Toggle Flow (AJAX)
+### 2. Checkbox Toggle Flow (htmx)
 
-User clicks a checkbox for instant feedback.
+User ticks an item; the server re-renders that event's card and htmx swaps it in.
 
 ```
-+-----------------------------------------------------------------+
-|                        Browser                                   |
-|                                                                  |
-|  User clicks checkbox                                            |
-|         |                                                        |
-|         v                                                        |
-|  +----------------------------------------------------------+   |
-|  | JavaScript: Optimistic Update                             |   |
-|  |  - Toggle checkbox visual immediately                     |   |
-|  |  - Update text strikethrough                              |   |
-|  |  - Disable button during request                          |   |
-|  +------------------------+----------------------------------+   |
-|                           |                                      |
-|                           | POST /events/{id}/items/{id}/toggle  |
-|                           | Accept: application/json             |
-+---------------------------+--------------------------------------+
-                            |
-                            v
 +-------------------------------------------------------------------+
-|                      FastAPI Handler                               |
+|                        Browser                                     |
+|                                                                    |
+|  User clicks an item's checkbox button (a <form> per item)        |
+|         |                                                          |
+|         | hx-post  POST /events/{id}/items/{item_id}/toggle        |
+|         |          HX-Request: true, view=card | detail            |
+|         | hx-target="#event-{id}"  hx-swap="outerHTML"             |
++---------+----------------------------------------------------------+
+          |
+          v
++-------------------------------------------------------------------+
+|                      FastAPI Handler (routes/items.py)            |
 |                                                                    |
 |  1. Validate item and event exist                                  |
 |  2. Check event not archived                                       |
 |  3. Toggle: item.is_checked = not item.is_checked                  |
 |  4. Commit to database                                             |
-|  5. Calculate counts for response                                  |
-|                                                                    |
-|  Return JSON:                                                      |
-|  {                                                                 |
-|    "success": true,                                                |
-|    "is_checked": true/false,                                       |
-|    "checked_count": N,                                             |
-|    "total_count": M,                                               |
-|    "all_checked": true/false                                       |
-|  }                                                                 |
-+----------------------------+--------------------------------------+
-                             |
-                             v
+|  5. HX-Request? render the card partial:                           |
+|       view=card   -> _event_card.html        (upcoming page)       |
+|       view=detail -> _event_detail_card.html (event page)          |
+|     Accept: application/json? the JSON counts (kept for the API)   |
+|     Otherwise: 303 redirect back (works without JavaScript)        |
++---------+----------------------------------------------------------+
+          |
+          v
 +-------------------------------------------------------------------+
 |                        Browser                                     |
 |                                                                    |
-|  +------------------------------------------------------------+   |
-|  | JavaScript: Handle Response                                 |   |
-|  |  - Update item counter (N/M)                                |   |
-|  |  - Enable/disable "Confirm Ready" button based on all_checked  |
-|  |  - Re-enable checkbox button                                |   |
-|  +------------------------------------------------------------+   |
-|                                                                    |
-|  On Error:                                                         |
-|  +------------------------------------------------------------+   |
-|  |  - Rollback optimistic update                               |   |
-|  |  - Log error to console                                     |   |
-|  +------------------------------------------------------------+   |
+|  htmx replaces #event-{id} with the returned card: the ticks,     |
+|  the (N/M) counter and the "Confirm Ready" button all come from   |
+|  the server, so there is nothing to roll back on an error.        |
 +-------------------------------------------------------------------+
 ```
 
@@ -650,6 +642,6 @@ All configuration is managed through environment variables (`.env` file).
 1. **Incremental Sync**: Uses Google's sync tokens to fetch only changes
 2. **Credential Caching**: OAuth credentials cached in memory
 3. **Service Caching**: Google API service instance reused
-4. **AJAX Updates**: Checkbox toggles don't require page reload
-5. **Optimistic UI**: Immediate visual feedback before server response
+4. **Partial Updates**: A checkbox toggle returns just that event's card (htmx), not the whole page
+5. **Built CSS**: Tailwind is compiled on the server at deploy time; no CDN or in-browser compiler
 6. **SQLite WAL**: Write-Ahead Logging for concurrent read performance

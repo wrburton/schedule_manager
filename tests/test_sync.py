@@ -189,3 +189,66 @@ class TestSyncStatePersistence:
 
         SyncState.load(session)
         assert SyncState.get_token("primary") == "round-trip-token"
+
+
+# ---------------------------------------------------------------------------
+# Fix #3: a sync of an unchanged event keeps its ticks
+# ---------------------------------------------------------------------------
+
+
+def google_event(start: str, end: str) -> dict:
+    return {
+        "id": "g-church",
+        "summary": "Church",
+        "description": "Items:\n- Microphone\n- FM System",
+        "start": {"dateTime": start},
+        "end": {"dateTime": end},
+    }
+
+
+def ticked_items(engine, google_id: str = "g-church") -> list[bool]:
+    """Read back in a fresh session, as the next sync does (SQLite drops the offset)."""
+    from sqlmodel import select
+
+    from app.models import Event
+
+    with Session(engine) as fresh:
+        event = fresh.exec(select(Event).where(Event.google_event_id == google_id)).one()
+        return sorted(item.is_checked for item in event.items)
+
+
+def sync_once(engine, event: dict) -> None:
+    from app.calendar.sync import _upsert_event
+
+    with Session(engine) as s:
+        _upsert_event(s, event)
+        s.commit()
+
+
+class TestSyncKeepsTicks:
+    def tick_all(self, engine):
+        from sqlmodel import select
+
+        from app.models import Item
+
+        with Session(engine) as s:
+            for item in s.exec(select(Item)).all():
+                item.is_checked = True
+                s.add(item)
+            s.commit()
+
+    @pytest.mark.parametrize("start,end", [
+        ("2026-10-25T10:30:00Z", "2026-10-25T12:00:00Z"),
+        ("2026-07-05T10:30:00+01:00", "2026-07-05T12:00:00+01:00"),  # summer time
+    ])
+    def test_unchanged_event_keeps_its_ticks(self, engine, start, end):
+        sync_once(engine, google_event(start, end))
+        self.tick_all(engine)
+        sync_once(engine, google_event(start, end))
+        assert ticked_items(engine) == [True, True]
+
+    def test_rescheduled_event_is_reset(self, engine):
+        sync_once(engine, google_event("2026-10-25T10:30:00Z", "2026-10-25T12:00:00Z"))
+        self.tick_all(engine)
+        sync_once(engine, google_event("2026-10-25T11:00:00Z", "2026-10-25T12:30:00Z"))
+        assert ticked_items(engine) == [False, False]

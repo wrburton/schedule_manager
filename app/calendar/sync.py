@@ -259,6 +259,16 @@ def _parse_datetime(dt_dict: dict) -> datetime:
         return datetime.strptime(dt_str, "%Y-%m-%d").replace(tzinfo=UTC)
 
 
+def _same_wall_time(stored: datetime, incoming: datetime) -> bool:
+    """Whether a stored event time matches the one Google sent.
+
+    SQLite keeps the wall-clock time and drops the offset, so a stored time read
+    back is naive while Google's is aware; a naive and an aware datetime are never
+    equal, which used to reset every checklist on every sync. Compare wall times.
+    """
+    return stored.replace(tzinfo=None) == incoming.replace(tzinfo=None)
+
+
 def _cleanup_orphaned_instance(
     session: Session,
     recurring_event_id: str,
@@ -358,7 +368,8 @@ def _upsert_event(session: Session, google_event: dict) -> bool:
         # Compare stored times with incoming times to detect rescheduling.
         # This is a key business rule: if an event is moved to a different time,
         # we assume the user needs to re-verify their preparation checklist.
-        time_changed = existing.start_time != start_time or existing.end_time != end_time
+        time_changed = not (_same_wall_time(existing.start_time, start_time)
+                            and _same_wall_time(existing.end_time, end_time))
 
         # Update all Google-authoritative fields
         existing.title = google_event.get("summary", "Untitled")

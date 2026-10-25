@@ -202,6 +202,7 @@ Environment variables (`.env`):
 | `GOOGLE_REFRESH_TOKEN` | OAuth refresh token | (required - from get_token.py) |
 | `GOOGLE_CALENDAR_ID` | Calendar to sync | primary |
 | `SYNC_INTERVAL_MINUTES` | Background sync interval | 5 |
+| `LOG_FILE` | Log file, rotated at 10 MB (five old files kept); empty logs to stderr | ~/.logs/scheduler/latest.log |
 
 ## Development
 

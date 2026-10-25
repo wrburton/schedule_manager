@@ -1,5 +1,7 @@
 """Application configuration via environment variables."""
 
+from pathlib import Path
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -28,6 +30,9 @@ class Settings(BaseSettings):
 
     # Sync settings
     sync_interval_minutes: int = 5
+
+    # Logging: rotated at 10 MB, five old files kept. Empty logs to stderr (the tests set this).
+    log_file: str = str(Path.home() / ".logs" / "scheduler" / "latest.log")
 
 
 settings = Settings()

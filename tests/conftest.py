@@ -1,6 +1,11 @@
 """Shared test fixtures."""
 
-from datetime import UTC, datetime, timedelta
+import os
+
+# Before the app is imported: log to stderr (pytest captures it), not the server's live log file
+os.environ["LOG_FILE"] = ""
+
+from datetime import UTC, datetime, timedelta  # noqa: E402
 from uuid import uuid4
 
 import pytest

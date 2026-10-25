@@ -241,3 +241,14 @@ class TestRootRedirect:
         response = client.get("/", follow_redirects=False)
         assert response.status_code == 307
         assert "/events/upcoming" in response.headers["location"]
+
+
+def test_tests_do_not_write_to_the_live_log():
+    """The deploy hook runs these on the server as the app's user: keep them out of ~/.logs."""
+    import logging
+    from logging.handlers import RotatingFileHandler
+
+    from app.core.config import settings
+
+    assert settings.log_file == ""
+    assert not any(isinstance(h, RotatingFileHandler) for h in logging.getLogger().handlers)

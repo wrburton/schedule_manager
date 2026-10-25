@@ -1,13 +1,13 @@
 """Calendar Checklist Web Application."""
 import logging
 from contextlib import asynccontextmanager
+from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
-
 from sqlmodel import Session
 
 from app.calendar.sync import SyncState
@@ -17,14 +17,16 @@ from app.core.scheduler import shutdown_scheduler, start_scheduler
 from app.routes import auth, events, items, sync
 
 # Configure logging
-log_dir = Path.home() / ".logs" / "scheduler"
-log_dir.mkdir(parents=True, exist_ok=True)
-log_file = log_dir / "latest.log"
+log_handlers: list[logging.Handler] = [logging.StreamHandler()]
+if settings.log_file:
+    log_file = Path(settings.log_file)
+    log_file.parent.mkdir(parents=True, exist_ok=True)
+    log_handlers = [RotatingFileHandler(log_file, maxBytes=10_000_000, backupCount=5, encoding="utf-8")]
 
 logging.basicConfig(
     level=logging.DEBUG if settings.debug else logging.INFO,
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    filename=str(log_file),
+    handlers=log_handlers,
 )
 logger = logging.getLogger(__name__)
 

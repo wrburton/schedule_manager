@@ -1,0 +1,74 @@
+{# The main card of an event's own page: what an htmx tick re-renders there
+   (#event-<id>, view=detail). Needs: event, has_unpushed, today. #}
+{% import "_macros.html" as m with context %}
+<div class="card event-card{% if event.start_time.date() == today %} event-today{% endif %}" id="event-{{ event.id }}">
+  <div class="event-head">
+    <div>
+      <h1 class="event-title event-title-lg">{{ event.title }}</h1>
+      <p class="event-when">{{ event.start_time.strftime('%A, %B %d, %Y') }}</p>
+      <p class="event-when">{{ event.start_time.strftime('%I:%M %p') }} - {{ event.end_time.strftime('%I:%M %p') }}</p>
+      {% if event.recurring_event_id %}<p class="event-note">Recurring event</p>{% endif %}
+    </div>
+    <div class="event-badges">
+      {% if event.confirmations %}<span class="badge badge-confirmed">Confirmed {{ event.confirmations[0].confirmed_at.strftime('%b %d at %I:%M %p') }}</span>{% endif %}
+      {% if event.is_archived %}<span class="badge">Archived</span>{% endif %}
+    </div>
+  </div>
+
+  {% if event.description %}
+  <div class="event-section">
+    <h2 class="event-label">Description</h2>
+    <div class="description">{{ event.description }}</div>
+  </div>
+  {% endif %}
+
+  {% if event.attendees %}
+  <div class="event-section">
+    <h2 class="event-label">Attendees ({{ event.attendees | length }})</h2>
+    <div class="attendee-rows">
+      {% for attendee in event.attendees %}
+      <div class="attendee-row">
+        <span>{{ attendee.display_name or attendee.email }}{% if attendee.display_name %} <span class="muted">{{ attendee.email }}</span>{% endif %}</span>
+        <span class="attendee {{ m.attendee_class(attendee.response_status) }}">{{ attendee.response_status }}</span>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+
+  <div class="event-section">
+    <h2 class="event-label">Checklist {{ m.counter(event, ' complete') }}{% if has_unpushed and not event.is_archived %} <span class="badge badge-unpushed">Unpushed changes</span>{% endif %}</h2>
+    {% if event.is_archived %}
+    <div class="checklist">
+      {% for item in event.items %}
+      <div class="check-static">
+        <span class="check-box{% if item.is_checked %} check-box-on{% endif %}">{% if item.is_checked %}✓{% endif %}</span>
+        <span class="{{ 'check-done' if item.is_checked else '' }}">{{ item.name }}</span>
+      </div>
+      {% else %}
+      <p class="hint">No items.</p>
+      {% endfor %}
+    </div>
+    {% else %}
+    {{ m.checklist(event, 'detail') }}
+    {% endif %}
+  </div>
+
+  <div class="card-actions">
+    {% if not event.is_archived %}
+      {% if not event.confirmations %}{{ m.confirm_button(event) }}{% endif %}
+      <form method="post" action="{{ rp(request) }}/events/{{ event.id }}/archive" class="form-inline">
+        <button type="submit" class="btn btn-ghost">Archive</button>
+      </form>
+      <form method="post" action="{{ rp(request) }}/events/{{ event.id }}/items/push" class="form-inline">
+        <button type="submit" class="btn btn-ghost" title="Write the checklist back to the Google Calendar event">
+          Push to Google Calendar{% if has_unpushed %}<span class="dot-warning" title="There are unpushed changes"></span>{% endif %}
+        </button>
+      </form>
+    {% else %}
+      <form method="post" action="{{ rp(request) }}/events/{{ event.id }}/unarchive" class="form-inline">
+        <button type="submit" class="btn btn-ghost">Unarchive</button>
+      </form>
+    {% endif %}
+  </div>
+</div>

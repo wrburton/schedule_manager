@@ -1,0 +1,22 @@
+# User-level unit: ~/.config/systemd/user/schedule_manager.service
+# (installed by scripts/install_service.sh, and by the post-receive hook when this file changes).
+# Caddy proxies https://<home domain>/schedule/* here, with /schedule stripped.
+[Unit]
+Description=Calendar Checklist (FastAPI) at /schedule
+After=network.target
+
+[Service]
+WorkingDirectory=%h/share/schedule_manager
+Environment="PATH=%h/share/schedule_manager/venv/bin:/usr/bin:/bin"
+ExecStart=%h/share/schedule_manager/venv/bin/uvicorn app.main:app \
+    --host 127.0.0.1 \
+    --port 8000 \
+    --root-path /schedule \
+    --proxy-headers \
+    --forwarded-allow-ips 127.0.0.1
+Restart=always
+RestartSec=5
+UMask=0077
+
+[Install]
+WantedBy=default.target

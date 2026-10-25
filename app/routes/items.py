@@ -1,4 +1,5 @@
 """Item routes for managing checklist items."""
+from datetime import UTC, datetime
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
@@ -8,14 +9,20 @@ from sqlmodel import Session
 from app.calendar.client import has_valid_credentials
 from app.calendar.sync import (
     delete_item_from_recurring_instances,
+    has_unpushed_changes,
     push_item_to_recurring_instances,
     push_items_to_calendar,
     push_recurring_instances,
 )
 from app.core.database import get_session
 from app.models import Event, Item
+from app.web import is_htmx, templates
 
 router = APIRouter(prefix="/events/{event_id}/items", tags=["items"])
+
+# What an htmx toggle re-renders: the card on the upcoming page, or the main
+# card on the event's own page (the form says which, in its `view` field).
+TOGGLE_PARTIALS = {"card": "_event_card.html", "detail": "_event_detail_card.html"}
 
 
 def wants_json(request: Request) -> bool:
@@ -71,13 +78,16 @@ async def toggle_item(
     event_id: UUID,
     item_id: UUID,
     request: Request,
+    view: str = Form("card"),
     session: Session = Depends(get_session),
 ):
     """
     Toggle item checked state.
 
-    Flips the is_checked boolean for the item. Returns JSON response with
-    updated state when Accept: application/json header is present (for AJAX),
+    Flips the is_checked boolean for the item. For htmx requests, returns the
+    re-rendered event card (`view`: "card" on the upcoming page, "detail" on the
+    event page) so the tick, the counter and the Confirm button update together.
+    Returns JSON when Accept: application/json is sent (older clients),
     otherwise redirects to the event detail page.
     """
     item = session.get(Item, item_id)
@@ -91,6 +101,18 @@ async def toggle_item(
     item.is_checked = not item.is_checked
     session.add(item)
     session.commit()
+
+    if is_htmx(request):
+        session.refresh(event)
+        return templates.TemplateResponse(
+            request,
+            TOGGLE_PARTIALS.get(view, TOGGLE_PARTIALS["card"]),
+            {
+                "event": event,
+                "has_unpushed": has_unpushed_changes(event),
+                "today": datetime.now(UTC).date(),
+            },
+        )
 
     if wants_json(request):
         checked_count = sum(1 for i in event.items if i.is_checked)

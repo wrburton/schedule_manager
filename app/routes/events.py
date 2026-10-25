@@ -4,19 +4,15 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
-from fastapi.templating import Jinja2Templates
 from sqlmodel import Session, select
 
 from app.calendar.client import has_valid_credentials
 from app.calendar.sync import SyncState, has_unpushed_changes
 from app.core.database import get_session
 from app.models import ChecklistConfirmation, Event
+from app.web import templates
 
 router = APIRouter(prefix="/events", tags=["events"])
-templates = Jinja2Templates(directory="app/templates")
-# rp(request) returns the ASGI root_path (e.g. "/schedule") set by uvicorn's
-# --root-path flag, so templates can prefix absolute hrefs without hardcoding.
-templates.env.globals["rp"] = lambda req: req.scope.get("root_path", "")
 
 
 @router.get("/upcoming", response_class=HTMLResponse)

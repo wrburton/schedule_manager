@@ -1,0 +1,63 @@
+{# Pieces shared by the event cards. Import with context (they use `request` and `rp`):
+   {% import "_macros.html" as m with context %} #}
+
+{# A Google attendee, coloured by their reply #}
+{% macro attendee_class(status) -%}
+attendee-{{ status if status in ('accepted', 'declined', 'tentative') else 'other' }}
+{%- endmacro %}
+
+{# The checklist of a live event: tick (htmx swaps the whole card, `view` says which
+   card), delete (this one, or every instance of a recurring event), add. #}
+{% macro checklist(event, view) %}
+  {% if event.items %}
+  <div class="checklist">
+    {% for item in event.items %}
+    <div class="check-row">
+      <form method="post" action="{{ rp(request) }}/events/{{ event.id }}/items/{{ item.id }}/toggle" class="check-form"
+            hx-post="{{ rp(request) }}/events/{{ event.id }}/items/{{ item.id }}/toggle"
+            hx-target="#event-{{ event.id }}" hx-swap="outerHTML" hx-disabled-elt="find button">
+        <input type="hidden" name="view" value="{{ view }}">
+        <button type="submit" class="check-toggle" aria-pressed="{{ 'true' if item.is_checked else 'false' }}">
+          <span class="check-box{% if item.is_checked %} check-box-on{% endif %}">{% if item.is_checked %}✓{% endif %}</span>
+          <span class="{{ 'check-done' if item.is_checked else '' }}">{{ item.name }}</span>
+        </button>
+      </form>
+      <div class="check-actions">
+        <form method="post" action="{{ rp(request) }}/events/{{ event.id }}/items/{{ item.id }}/delete" class="form-inline">
+          <button type="submit" class="link-danger" title="Delete this item">Delete</button>
+        </form>
+        {% if event.recurring_event_id %}
+        <form method="post" action="{{ rp(request) }}/events/{{ event.id }}/items/{{ item.id }}/delete" class="form-inline"
+              x-confirm="Delete “{{ item.name }}” from every instance of this recurring event?">
+          <input type="hidden" name="delete_from_all" value="true">
+          <button type="submit" class="link-danger" title="Delete from every instance">All</button>
+        </form>
+        {% endif %}
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+  <p class="hint">No items yet. Add them below, or list them in the Google Calendar event's description.</p>
+  {% endif %}
+  <form method="post" action="{{ rp(request) }}/events/{{ event.id }}/items">
+    <div class="add-item">
+      <input type="text" name="name" placeholder="Add item…" class="form-input" required aria-label="New item for {{ event.title }}">
+      <button type="submit" class="btn btn-secondary btn-sm">Add</button>
+    </div>
+    {% if event.recurring_event_id %}
+    <label class="form-check add-all"><input type="checkbox" name="add_to_all" value="true"> Add to all future instances</label>
+    {% endif %}
+  </form>
+{% endmacro %}
+
+{% macro confirm_button(event) %}
+  {% set open_items = event.items | rejectattr('is_checked') | list | length %}
+  <form method="post" action="{{ rp(request) }}/events/{{ event.id }}/confirm" class="form-inline">
+    <button type="submit" class="btn btn-primary"{% if event.items and open_items %} disabled title="Tick every item first"{% endif %}>Confirm ready</button>
+  </form>
+{% endmacro %}
+
+{% macro counter(event, suffix='') -%}
+{% if event.items %}<span class="counter">({{ event.items | selectattr('is_checked') | list | length }}/{{ event.items | length }}{{ suffix }})</span>{% endif %}
+{%- endmacro %}

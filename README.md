@@ -18,9 +18,13 @@ A web application that integrates with Google Calendar to present event-based pr
 ## Tech Stack
 
 - **Backend:** Python 3.11+, FastAPI, SQLModel, SQLite
-- **Frontend:** Jinja2 templates, Tailwind CSS
+- **Frontend:** Jinja2 templates, Tailwind CSS 4 (built by the deploy hooks), Alpine.js, htmx:
+  the family apps' stack (see "Front end" below)
 - **Scheduler:** APScheduler
 - **External:** Google Calendar API v3
+
+The family's copy runs on the home server at https://<home domain>/schedule/
+(home network only) and is deployed with `git push live main`: see "Deployment" below.
 
 ## Quick Start
 
@@ -204,9 +208,60 @@ Environment variables (`.env`):
 ### Running Tests
 
 ```bash
-pip install -e ".[dev]"
+pip install -c constraints.txt -e ".[dev]"
 pytest tests/ -v
 ```
+
+`constraints.txt` pins the exact versions running on the server; change a dependency in
+`pyproject.toml` and its pin there in the same commit.
+
+### Front end
+
+The family apps' rules, enforced by `tests/test_frontend.py`:
+
+- **Styling**: Tailwind v4 classes in templates, plus the component classes in
+  `app/static/css/src/components.css`; the theme (the family's dark palette with a violet
+  accent) is in `app/static/css/src/app.css`. No `<style>` blocks, no CDN. The CSS is built
+  on the server by `scripts/build_css.sh` (Tailwind CLI 4.3.3) from the deploy hooks; the
+  output `app/static/css/app.css` is never committed.
+- **Behaviour**: Alpine.js components in `app/static/js/app.js` (`tabRefresh` reloads an
+  events page when you return to the tab after a minute away; `x-confirm`), and htmx:
+  ticking an item posts with `hx-post` and the server returns the re-rendered card
+  (`_event_card.html` on the upcoming page, `_event_detail_card.html` on an event's page).
+  Every form still works without JavaScript (post and redirect). No inline `<script>` or
+  `on*=""` handlers. Alpine 3.17.2 and htmx 2.0.4 are vendored in `app/static/js/`.
+- To look at a change locally, build the CSS on the server and copy it back (the CLI isn't
+  installed on Windows): see the dinner planner's README, "Front end", with `app/static`
+  in place of `static`.
+
+## Deployment
+
+The family's copy runs on the home server (servertools' SERVER.md has the details), deployed like the
+other family apps (since 2026-10-25). Code is changed in a clone on the PC and pushed to the
+live checkout `~/share/schedule_manager` (remote `live`, branch `main`); hooks on the server
+test, snapshot, build and restart. The tests are the gate; there's no staging copy.
+
+```
+PC clone (calendar\schedule_manager)  ──git push live main (or srv deploy)──►  ~/share/schedule_manager
+                                       pre-receive: direct-edit guard, tests on a /tmp export,
+                                                    CSS build, snapshot of calendar_checklist.db
+                                       post-receive: deps, CSS build, unit, restart, health check,
+                                                     mirror main to GitHub (deploy.mirror)
+https://<home domain>/schedule/ ◄── Caddy ── uvicorn 127.0.0.1:8000 (--root-path /schedule)
+```
+
+- **Service**: the user-level unit `schedule_manager.service` (`deploy/`, installed by
+  `scripts/install_service.sh`, which also removed the old system unit and set `.env` to 600).
+  `srv status calendar`, `srv logs calendar`, `srv restart calendar`.
+- **GitHub** (`origin`, wrburton/schedule_manager) is a mirror: post-receive pushes `main`
+  there after each deploy when `git config deploy.mirror origin` is set in the live checkout
+  (the PC can't reach GitHub; the server can).
+- **Backups**: each deploy snapshots the database to `backups/pre-deploy/` (newest 20), and
+  `servertools-backup@schedule_manager.timer` copies it to the NAS nightly
+  (`calendar-backup/db/`, 60 days).
+- **Rules**: never edit tracked files in `~/share/schedule_manager` (a dirty live tree blocks
+  every push); undo with a revert commit (force-push is refused); `.env` holds the Google
+  refresh token and stays on the server.
 
 ### Project Structure
 
@@ -224,9 +279,15 @@ schedule_manager/
 │   │   └── sync.py          # Sync service
 │   ├── models/              # SQLModel data models
 │   ├── routes/              # FastAPI route handlers
-│   └── templates/           # Jinja2 HTML templates
+│   ├── web.py               # The shared templates object and rp(request)
+│   ├── static/              # css/src (Tailwind sources), js (app.js, Alpine, htmx), favicon
+│   └── templates/           # Jinja2 templates (_event_card.html etc. are htmx partials)
+├── deploy/                  # The user-level systemd unit
 ├── scripts/
-│   └── get_token.py         # One-time OAuth setup script
+│   ├── get_token.py         # One-time OAuth setup script
+│   ├── build_css.sh         # Tailwind build (run by the hooks)
+│   ├── install_service.sh   # Installs the systemd unit on the server
+│   └── git-hooks/           # pre-receive / post-receive
 ├── tests/
 ├── pyproject.toml
 └── README.md

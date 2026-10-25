@@ -1,0 +1,37 @@
+{# An event on the upcoming page (today and tomorrow): what an htmx tick re-renders
+   (#event-<id>, view=card). Needs: event, has_unpushed, today. #}
+{% import "_macros.html" as m with context %}
+<div class="card event-card{% if event.start_time.date() == today %} event-today{% endif %}" id="event-{{ event.id }}">
+  <div class="event-head">
+    <div>
+      <a href="{{ rp(request) }}/events/{{ event.id }}" class="event-title">{{ event.title }}</a>
+      <p class="event-when">{{ event.start_time.strftime('%a, %b %d, %Y') }} from {{ event.start_time.strftime('%I:%M %p') }} to {{ event.end_time.strftime('%I:%M %p') }}</p>
+      {% if event.recurring_event_id %}<p class="event-note">Recurring event</p>{% endif %}
+    </div>
+    {% if event.confirmations %}<span class="badge badge-confirmed">Confirmed</span>{% endif %}
+  </div>
+
+  {% if event.attendees %}
+  <div class="event-section">
+    <h3 class="event-label">Attendees</h3>
+    <div class="attendee-list">
+      {% for attendee in event.attendees %}
+      <span class="attendee {{ m.attendee_class(attendee.response_status) }}" title="{{ attendee.response_status }}">{{ attendee.display_name or attendee.email.split('@')[0] }}</span>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+
+  <div class="event-section">
+    <h3 class="event-label">Checklist {{ m.counter(event) }}{% if has_unpushed %} <span class="badge badge-unpushed">Unpushed</span>{% endif %}</h3>
+    {{ m.checklist(event, 'card') }}
+  </div>
+
+  <div class="card-actions">
+    {% if not event.confirmations %}{{ m.confirm_button(event) }}{% endif %}
+    <form method="post" action="{{ rp(request) }}/events/{{ event.id }}/archive" class="form-inline">
+      <button type="submit" class="btn btn-ghost">Archive</button>
+    </form>
+    <a href="{{ rp(request) }}/events/{{ event.id }}" class="btn btn-ghost">Details</a>
+  </div>
+</div>

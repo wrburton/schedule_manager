@@ -1,0 +1,3 @@
+# Keep LF endings in the repo and working tree on every OS: the server runs
+# these files (shell hooks, unit files) and Windows clones must not add CRLF.
+* text=auto eol=lf

@@ -44,3 +44,9 @@ Thumbs.db
 
 # Ruff
 .ruff_cache/
+
+# Built by scripts/build_css.sh on the server (the deploy hooks)
+app/static/css/app.css
+
+# Pre-deploy database snapshots (server only)
+backups/

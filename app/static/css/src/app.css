@@ -1,0 +1,64 @@
+/* Tailwind entry point (as in the other family apps: finance, medical, synchro,
+   email, dinner). Built to app/static/css/app.css by scripts/build_css.sh, which
+   the deploy hooks run on the server; the output is never committed.
+
+   Layers, lowest priority first: theme (the variables below), base (unused),
+   components (the app's own styles, components.css), utilities (Tailwind
+   classes used in the templates). Tailwind's preflight reset is deliberately
+   not imported: components.css keeps the app's own reset. */
+
+@layer theme, base, components, utilities;
+@import "tailwindcss/theme.css" layer(theme);
+@import "tailwindcss/utilities.css" layer(utilities) source(none);
+@import "./components.css" layer(components);
+
+/* Where class names are looked for: the templates, and the app's own script
+   (not the vendored *.min.js libraries) */
+@source "../../../templates";
+@source "../../js/app.js";
+
+/* `static`: emit every variable, since components.css uses them too */
+@theme static {
+  /* Only the app's own palette: no Tailwind default colours. The family apps'
+     dark theme, with a violet in place of the medical app's teal. */
+  --color-*: initial;
+  --color-primary: #a78bfa;        /* links, focus rings, primary buttons */
+  --color-primary-hover: #8b5cf6;
+  --color-white: #ffffff;
+  --color-black: #000000;
+
+  /* Text greys, lightest first */
+  --color-fg: #e0e0e0;             /* body text, headings */
+  --color-slate-300: #cbd5e1;      /* list text */
+  --color-slate-400: #94a3b8;      /* labels, notes */
+  --color-muted: #888888;          /* hints, counts */
+  --color-slate-500: #64748b;      /* breadcrumbs */
+  --color-dim: #555555;            /* empty states */
+  --color-faint: #444444;          /* placeholders */
+
+  /* Surfaces and lines */
+  --color-page: #0c0c0d;
+  --color-surface: #141414;
+  --color-surface-hover: #1a1a1a;
+  --color-line: #2a2a2a;
+  --color-line-inner: #1e1e1e;
+
+  /* Accents: light shades for text on the dark background */
+  --color-red-300: #fca5a5;
+  --color-amber-300: #fcd34d;
+  --color-green-300: #86efac;
+
+  --font-*: initial;
+  --font-sans: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+
+  /* Font sizes without paired line heights */
+  --text-*: initial;
+  --text-xs: 0.75rem;
+  --text-small: 0.8125rem;
+  --text-sm: 0.875rem;
+  --text-body: 0.9375rem;
+  --text-base: 1rem;
+  --text-lg: 1.125rem;
+  --text-xl: 1.25rem;
+}

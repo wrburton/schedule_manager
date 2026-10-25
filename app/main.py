@@ -65,8 +65,18 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+class RevalidatedStaticFiles(StaticFiles):
+    """Static files served no-cache, so a deploy never leaves a stale app.js or
+    app.css behind (the browser revalidates by etag), as in the other family apps."""
+
+    def file_response(self, *args, **kwargs):
+        response = super().file_response(*args, **kwargs)
+        response.headers["Cache-Control"] = "no-cache"
+        return response
+
+
 # Mount static files
-app.mount("/static", StaticFiles(directory="app/static"), name="static")
+app.mount("/static", RevalidatedStaticFiles(directory=Path(__file__).parent / "static"), name="static")
 
 # Include routers
 app.include_router(auth.router)

@@ -1,0 +1,106 @@
+#!/usr/bin/env bash
+# post-receive — deploy step, runs after the live checkout has been updated
+# (receive.denyCurrentBranch=updateInstead). See pre-receive for installation.
+#
+# For a push to main:
+#   - pyproject.toml or constraints.txt changed
+#                             → pip install -c constraints.txt -e ".[dev]" into the live venv
+#   - every push              → build app/static/css/app.css (scripts/build_css.sh)
+#   - deploy/schedule_manager.service changed
+#                             → install it as the user-level unit (daemon-reload)
+#   - runtime files changed   → restart schedule_manager.service and health-check it
+#   - `git config deploy.mirror <remote>` set on the server
+#                             → push main to that remote too (GitHub), reported, never blocking
+# app/static/ is served from disk, so it changes immediately without a restart.
+# The push has already been accepted, so this reports problems rather than
+# failing; the fix is a revert commit pushed through the same path.
+set -uo pipefail
+
+ZERO=0000000000000000000000000000000000000000
+BRANCH=refs/heads/main
+APP_DIR="$(dirname "$(git rev-parse --absolute-git-dir)")"
+SERVICE=schedule_manager.service
+HEALTH_URL=http://127.0.0.1:8000/health
+UNIT_DIR="$HOME/.config/systemd/user"
+# Changes under these paths need a restart (app/static/ is excluded below).
+RESTART_PATHS='^(app/|deploy/|pyproject\.toml$|constraints\.txt$)'
+
+cd "$APP_DIR" || exit 1
+unset GIT_DIR GIT_WORK_TREE GIT_QUARANTINE_PATH
+export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
+
+step() { printf '\n==> %s\n' "$*"; }
+problem() {
+  printf '\n!! %s\n' "$*"
+  printf '!! The live tree is at %s.\n' "$(git log --oneline -1)"
+  printf '!! Recover with: git revert HEAD && git push live main\n'
+  printf '!! Database snapshot from before this deploy: %s\n\n' \
+    "$(ls -1t backups/pre-deploy/calendar_checklist_*.db 2>/dev/null | head -1)"
+}
+
+mirror() {
+  local remote
+  remote="$(git config --get deploy.mirror || true)"
+  [[ -n "$remote" ]] || return 0
+  step "Mirroring main to $remote"
+  git push -q "$remote" main 2>&1 | tail -3 || printf '!! the push to %s failed: the deploy is fine; push by hand later\n' "$remote"
+}
+
+# Read all refs up front so nothing run below can consume stdin.
+mapfile -t updates
+
+for update in "${updates[@]}"; do
+  read -r old new ref <<<"$update"
+  [[ "$ref" == "$BRANCH" ]] || continue
+
+  if [[ "$old" == "$ZERO" ]]; then
+    changed="$(git ls-tree -r --name-only "$new")"
+  else
+    changed="$(git diff --name-only "$old" "$new")"
+  fi
+
+  if grep -qxE 'pyproject\.toml|constraints\.txt' <<<"$changed"; then
+    step "Installing dependencies into the live venv"
+    venv/bin/pip install -q -c constraints.txt -e ".[dev]" || { problem "pip install failed; service NOT restarted"; exit 0; }
+  fi
+
+  if [[ -f scripts/build_css.sh ]]; then
+    step "Building the CSS"
+    bash scripts/build_css.sh "$APP_DIR" || problem "CSS build failed; pages use the previous build"
+  fi
+
+  if grep -qx 'deploy/schedule_manager.service' <<<"$changed"; then
+    step "Installing the changed unit into $UNIT_DIR"
+    install -m 644 deploy/schedule_manager.service "$UNIT_DIR/$SERVICE" && systemctl --user daemon-reload \
+      || { problem "could not install the unit; service NOT restarted"; exit 0; }
+  fi
+
+  if ! grep -vE '^app/static/' <<<"$changed" | grep -qE "$RESTART_PATHS"; then
+    step "Deployed $(git log --oneline -1) — no runtime files changed, service not restarted"
+    mirror
+    continue
+  fi
+
+  if ! systemctl --user cat "$SERVICE" >/dev/null 2>&1; then
+    problem "the user-level $SERVICE is not installed, so the new code is NOT running yet.
+!! Install it once with: bash ~/share/schedule_manager/scripts/install_service.sh"
+    continue
+  fi
+
+  step "Restarting $SERVICE"
+  systemctl --user restart "$SERVICE"
+  code=000
+  for _ in $(seq 1 30); do
+    code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 2 "$HEALTH_URL" || true)"
+    [[ "$code" == 200 ]] && break
+    sleep 1
+  done
+
+  if [[ "$code" == 200 ]]; then
+    step "Deployed $(git log --oneline -1) — healthy"
+    mirror
+  else
+    journalctl --user -u "$SERVICE" -n 40 --no-pager
+    problem "service is not healthy after restart (last HTTP status: $code)"
+  fi
+done

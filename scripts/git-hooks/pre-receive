@@ -1,0 +1,103 @@
+#!/usr/bin/env bash
+# pre-receive — gate for pushes into the live checkout (~/share/schedule_manager).
+#
+# Installed on the server (once) as symlinks, so the hooks are versioned here:
+#   ln -s ../../scripts/git-hooks/pre-receive  .git/hooks/pre-receive
+#   ln -s ../../scripts/git-hooks/post-receive .git/hooks/post-receive
+#
+# For a push to main (this app's deploy branch; GitHub's default too), in order:
+#   1. Refuse if tracked files in the live checkout were edited on the server.
+#   2. Run the test suite against a temporary export of the pushed commit —
+#      never the live tree. A throwaway venv is built if pyproject.toml or
+#      constraints.txt changed.
+#   3. Build the CSS (scripts/build_css.sh) in the temporary export, so a broken
+#      Tailwind build is caught before the live tree changes.
+#   4. Snapshot the live database (SQLite's backup API; it is small) into
+#      backups/pre-deploy/, keeping the newest 20.
+# Any failure rejects the push and leaves the live checkout untouched.
+# Pushes to other branches are accepted without checks (they never touch the
+# live tree).
+set -euo pipefail
+
+ZERO=0000000000000000000000000000000000000000
+BRANCH=refs/heads/main
+APP_DIR="$(dirname "$(git rev-parse --absolute-git-dir)")"
+LIVE_PY="$APP_DIR/venv/bin/python"
+SNAPSHOT_DIR="$APP_DIR/backups/pre-deploy"
+SNAPSHOT_KEEP=20
+DB="$APP_DIR/calendar_checklist.db"
+
+step() { printf '\n==> %s\n' "$*"; }
+reject() { printf '\n!! PUSH REJECTED: %s\n\n' "$*"; exit 1; }
+
+# Run a command with git's hook environment removed so nothing under test
+# can accidentally operate on this repository.
+clean_env() {
+  env -u GIT_DIR -u GIT_WORK_TREE -u GIT_QUARANTINE_PATH \
+      -u GIT_OBJECT_DIRECTORY -u GIT_ALTERNATE_OBJECT_DIRECTORIES "$@"
+}
+
+# Read all refs up front so nothing run below can consume stdin.
+mapfile -t updates
+
+for update in "${updates[@]}"; do
+  read -r old new ref <<<"$update"
+  [[ "$ref" == "$BRANCH" ]] || continue
+  [[ "$new" != "$ZERO" ]] || reject "deleting main is not allowed"
+
+  # updateInstead would refuse a dirty tree anyway, but only after the tests
+  # and with a vaguer message.
+  step "Checking the live checkout has no direct edits"
+  dirty="$(clean_env git --no-optional-locks -C "$APP_DIR" status --porcelain --untracked-files=no)"
+  [[ -z "$dirty" ]] || reject "tracked files in $APP_DIR were edited directly on the server:
+$dirty
+Bring those edits into the clone (or discard them on the server), then push again."
+
+  tmp="$(mktemp -d /tmp/calendar-deploy.XXXXXX)"
+  trap 'rm -rf "$tmp"' EXIT
+  git archive "$new" | tar -x -C "$tmp"
+
+  if [[ "$old" == "$ZERO" ]]; then
+    changed="$(git ls-tree -r --name-only "$new")"
+  else
+    changed="$(git diff --name-only "$old" "$new")"
+  fi
+
+  py="$LIVE_PY"
+  if grep -qxE 'pyproject\.toml|constraints\.txt' <<<"$changed"; then
+    step "Dependencies changed — building a throwaway venv for the checks"
+    python3 -m venv "$tmp/.venv" \
+      && "$tmp/.venv/bin/pip" install -q -c "$tmp/constraints.txt" -e "$tmp[dev]" </dev/null \
+      || reject "dependency install failed"
+    py="$tmp/.venv/bin/python"
+  fi
+
+  step "Running tests on $(git log --oneline -1 "$new")"
+  # Each step is &&-chained: set -e does not apply inside a `( ... ) || x` subshell.
+  (
+    cd "$tmp" \
+      && export PYTHONPATH="$tmp" PYTHONDONTWRITEBYTECODE=1 \
+      && clean_env "$py" -c "import app, sys; sys.exit(0 if app.__file__.startswith('$tmp/') else 'tests would import ' + app.__file__)" \
+      && clean_env timeout 600 "$py" -m pytest -q -p no:cacheprovider --tb=short tests </dev/null
+  ) || reject "tests failed"
+
+  step "Building the CSS in the temporary export"
+  clean_env bash "$tmp/scripts/build_css.sh" "$tmp" </dev/null || reject "the CSS build failed"
+
+  if [[ -f "$DB" ]]; then
+    step "Snapshotting the database to backups/pre-deploy/"
+    mkdir -p "$SNAPSHOT_DIR" && chmod 700 "$APP_DIR/backups" "$SNAPSHOT_DIR" || reject "could not create $SNAPSHOT_DIR"
+    snapshot="$SNAPSHOT_DIR/calendar_checklist_$(date -u +%Y%m%dT%H%M%SZ).db"
+    "$LIVE_PY" -c '
+import sqlite3, sys
+src = sqlite3.connect(f"file:{sys.argv[1]}?mode=ro", uri=True)
+dst = sqlite3.connect(sys.argv[2])
+src.backup(dst)
+dst.close()
+' "$DB" "$snapshot" && chmod 600 "$snapshot" || reject "database snapshot failed"
+    echo "Wrote $snapshot"
+    ls -1t "$SNAPSHOT_DIR"/calendar_checklist_*.db | tail -n +$((SNAPSHOT_KEEP + 1)) | xargs -r rm -f
+  fi
+
+  step "Checks passed — updating the live checkout"
+done

@@ -351,4 +351,5 @@ We welcome contributions! Please see our [Contributing Guide](CONTRIBUTING.md) f
 
 ## License
 
-MIT - see [LICENSE](LICENSE) for details.
+MIT © 2026 [wrburton](https://github.com/wrburton) - see [LICENSE](LICENSE) for details. If you reuse the code, keep the
+copyright notice and licence text with it, as the licence requires.
